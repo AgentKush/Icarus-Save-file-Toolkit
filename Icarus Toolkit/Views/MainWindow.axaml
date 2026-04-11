@@ -55,13 +55,19 @@
 
             <!-- Row 0: Game Path Selection -->
             <Border Grid.Row="0" Padding="10" BorderThickness="0,0,0,1" BorderBrush="#333333">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock VerticalAlignment="Center" Text="Game Path:" FontWeight="SemiBold" />
-                    <TextBlock VerticalAlignment="Center" Text="{Binding GamePath}" Foreground="#AAAAAA" />
-                    <Button Command="{Binding SelectGameFolderButtonClickedCommand}" Content="Select Folder"
-                            IsVisible="{Binding ValidGamePath, Converter={StaticResource InverseBooleanConverter}}" />
-                    <Button Command="{Binding ChangeGameFolderCommand}" Content="Change Folder"
-                            IsVisible="{Binding ValidGamePath}" />
+                <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock VerticalAlignment="Center" Text="Save Path:" FontWeight="SemiBold" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding GamePath}" Foreground="#AAAAAA"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="700" />
+                        <Button Command="{Binding SelectGameFolderButtonClickedCommand}" Content="Auto-Detect / Select"
+                                IsVisible="{Binding ValidGamePath, Converter={StaticResource InverseBooleanConverter}}" />
+                        <Button Command="{Binding ChangeGameFolderCommand}" Content="Change Folder"
+                                IsVisible="{Binding ValidGamePath}" />
+                    </StackPanel>
+                    <TextBlock IsVisible="{Binding IsPathWarningVisible}" Foreground="#FF5555" FontSize="11"
+                               TextWrapping="Wrap"
+                               Text="{Binding PathWarningText}" />
                 </StackPanel>
             </Border>
 
@@ -231,9 +237,14 @@
 
                 <!-- ===== FLAGS TAB ===== -->
                 <TabItem Header="Flags">
-                    <Grid RowDefinitions="*,Auto" Margin="10">
+                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+                            <TextBlock Text="Character Flags" FontSize="14" FontWeight="Bold" />
+                            <TextBlock Text="Unlocked tech tree nodes, talent blueprints, mission rewards, and progression milestones."
+                                       Foreground="#AAAAAA" />
+                        </StackPanel>
                         <DataGrid
-                            Grid.Row="0"
+                            Grid.Row="1"
                             ItemsSource="{Binding SelectedCharacterFlags}"
                             SelectedIndex="{Binding SelectedFlagIndex}"
                             CanUserReorderColumns="False"
@@ -243,15 +254,19 @@
                             BorderThickness="1"
                             BorderBrush="#444444">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Flag ID" Binding="{Binding}" Width="*" />
+                                <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="60" />
+                                <DataGridTextColumn Header="Flag Name" Binding="{Binding Name}" Width="*" />
                             </DataGrid.Columns>
                         </DataGrid>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8"
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
                                     Margin="0,8,0,0" IsVisible="{Binding EditMode}">
-                            <NumericUpDown Value="{Binding NewFlagId}" Minimum="0" Width="150"
-                                           Watermark="Flag ID" />
+                            <ComboBox ItemsSource="{Binding AvailableFlags}"
+                                      SelectedItem="{Binding SelectedNewFlag}"
+                                      MinWidth="350" MaxDropDownHeight="300"
+                                      PlaceholderText="Select a flag to add..." />
                             <Button Command="{Binding AddFlagCommand}" Content="Add Flag" />
                             <Button Command="{Binding RemoveFlagCommand}" Content="Remove Selected" />
+                            <Button Command="{Binding UnlockAllCharacterFlagsCommand}" Content="Unlock All" FontWeight="Bold" />
                         </StackPanel>
                     </Grid>
                 </TabItem>
@@ -298,6 +313,10 @@
                     <ScrollViewer Padding="16">
                         <StackPanel Spacing="12">
                             <TextBlock Text="Player Profile" FontSize="14" FontWeight="Bold" />
+                            <Border Background="#332200" BorderBrush="#665500" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,4">
+                                <TextBlock TextWrapping="Wrap" Foreground="#FFCC44" FontSize="11"
+                                           Text="NOTE: Profile data (flags, talents, resources) may be overwritten by the Icarus game server when you connect online. For best results: close the game completely, make edits, then launch. If changes revert, the server is re-syncing your profile. Character-level edits (XP, name, cosmetics) are more reliable." />
+                            </Border>
                             <Grid ColumnDefinitions="120,*,120,*" RowDefinitions="Auto">
                                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="User ID:" />
                                 <TextBlock Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
@@ -331,14 +350,47 @@
                                 <Button Command="{Binding RemoveMetaResourceCommand}" Content="Remove Selected" />
                             </StackPanel>
 
-                            <!-- Profile Talents -->
+                            <!-- Account Flags (Blueprints & Unlocks) -->
                             <Border Height="1" Background="#444444" Margin="0,4" />
-                            <TextBlock Text="Profile Talents" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="Account Flags (Blueprints &amp; Unlocks)" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="Blueprint unlocks, mission rewards, Great Hunt progress, and workshop grants. These are the flags that unlock craftable items and gear."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
                             <DataGrid
-                                ItemsSource="{Binding ProfileTalents}"
+                                ItemsSource="{Binding ProfileAccountFlags}"
+                                SelectedIndex="{Binding SelectedAccountFlagIndex}"
                                 CanUserReorderColumns="False"
                                 CanUserResizeColumns="True"
                                 IsReadOnly="True"
+                                MaxHeight="250"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#444444">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="60" />
+                                    <DataGridTextColumn Header="Account Flag Name" Binding="{Binding Name}" Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding EditMode}">
+                                <ComboBox ItemsSource="{Binding AvailableAccountFlags}"
+                                          SelectedItem="{Binding SelectedNewAccountFlag}"
+                                          MinWidth="350" MaxDropDownHeight="300"
+                                          PlaceholderText="Select an account flag to unlock..." />
+                                <Button Command="{Binding AddAccountFlagCommand}" Content="Add Flag" />
+                                <Button Command="{Binding RemoveAccountFlagCommand}" Content="Remove Selected" />
+                                <Button Command="{Binding UnlockAllAccountFlagsCommand}" Content="Unlock All" FontWeight="Bold" />
+                            </StackPanel>
+
+                            <!-- Profile Talents -->
+                            <Border Height="1" Background="#444444" Margin="0,4" />
+                            <TextBlock Text="Profile Talents (Prospects &amp; Unlocks)" FontSize="13" FontWeight="SemiBold" />
+                            <TextBlock Text="Completed prospects, story progression, and granted talents. Adding prospect entries here may help unlock blueprint-gated items."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+                            <DataGrid
+                                ItemsSource="{Binding ProfileTalents}"
+                                SelectedIndex="{Binding SelectedProfileTalentIndex}"
+                                CanUserReorderColumns="False"
+                                CanUserResizeColumns="True"
+                                IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
                                 MaxHeight="400"
                                 GridLinesVisibility="Horizontal"
                                 BorderThickness="1"
@@ -348,8 +400,111 @@
                                     <DataGridTextColumn Header="Rank" Binding="{Binding Rank}" Width="100" />
                                 </DataGrid.Columns>
                             </DataGrid>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding EditMode}">
+                                <TextBox Watermark="Talent/Prospect RowName" Text="{Binding NewProfileTalentRowName}" Width="300" />
+                                <NumericUpDown Value="{Binding NewProfileTalentRank}" Minimum="1" Maximum="10" Width="80" />
+                                <Button Command="{Binding AddProfileTalentCommand}" Content="Add Talent" />
+                                <Button Command="{Binding RemoveProfileTalentCommand}" Content="Remove Selected" />
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
+                </TabItem>
+
+                <!-- ===== ACCOLADES TAB ===== -->
+                <TabItem Header="Accolades" IsVisible="{Binding HasAccolades}">
+                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+                            <TextBlock Text="Accolades (Achievements)" FontSize="14" FontWeight="Bold" />
+                            <TextBlock Text="Achievement tracking and progression stats. Each entry has a RowName identifier and a point value."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <DataGrid
+                            Grid.Row="1"
+                            ItemsSource="{Binding AccoladeEntries}"
+                            SelectedIndex="{Binding SelectedAccoladeIndex}"
+                            CanUserReorderColumns="False"
+                            CanUserResizeColumns="True"
+                            IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                            GridLinesVisibility="Horizontal"
+                            BorderThickness="1"
+                            BorderBrush="#444444">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Accolade (RowName)" Binding="{Binding RowName}" Width="*" />
+                                <DataGridTextColumn Header="Points" Binding="{Binding NumPoints}" Width="120" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                                    Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                            <TextBox Watermark="Accolade RowName" Text="{Binding NewAccoladeRowName}" Width="250" />
+                            <NumericUpDown Value="{Binding NewAccoladePoints}" Minimum="0" Maximum="999999" Width="120" />
+                            <Button Command="{Binding AddAccoladeCommand}" Content="Add Accolade" />
+                            <Button Command="{Binding RemoveAccoladeCommand}" Content="Remove Selected" />
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+
+                <!-- ===== BESTIARY TAB ===== -->
+                <TabItem Header="Bestiary" IsVisible="{Binding HasBestiary}">
+                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+                            <TextBlock Text="Bestiary (Creature Discoveries)" FontSize="14" FontWeight="Bold" />
+                            <TextBlock Text="Tracks creatures you've discovered and their research points."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <DataGrid
+                            Grid.Row="1"
+                            ItemsSource="{Binding BestiaryEntries}"
+                            SelectedIndex="{Binding SelectedBestiaryIndex}"
+                            CanUserReorderColumns="False"
+                            CanUserResizeColumns="True"
+                            IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                            GridLinesVisibility="Horizontal"
+                            BorderThickness="1"
+                            BorderBrush="#444444">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Creature (RowName)" Binding="{Binding RowName}" Width="*" />
+                                <DataGridTextColumn Header="Points" Binding="{Binding NumPoints}" Width="120" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                                    Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                            <TextBox Watermark="Creature RowName" Text="{Binding NewBestiaryRowName}" Width="250" />
+                            <NumericUpDown Value="{Binding NewBestiaryPoints}" Minimum="0" Maximum="999999" Width="120" />
+                            <Button Command="{Binding AddBestiaryEntryCommand}" Content="Add Entry" />
+                            <Button Command="{Binding RemoveBestiaryEntryCommand}" Content="Remove Selected" />
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+
+                <!-- ===== LOADOUTS TAB ===== -->
+                <TabItem Header="Loadouts" IsVisible="{Binding HasLoadouts}">
+                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+                            <TextBlock Text="Equipment Loadout Presets" FontSize="14" FontWeight="Bold" />
+                            <TextBlock Text="Saved loadout presets for quickly equipping items from the orbital workshop before a drop."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <DataGrid
+                            Grid.Row="1"
+                            ItemsSource="{Binding LoadoutEntries}"
+                            SelectedIndex="{Binding SelectedLoadoutIndex}"
+                            CanUserReorderColumns="False"
+                            CanUserResizeColumns="True"
+                            IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                            GridLinesVisibility="Horizontal"
+                            BorderThickness="1"
+                            BorderBrush="#444444">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Loadout Name" Binding="{Binding LoadoutName}" Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                                    Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                            <TextBox Watermark="Loadout Name" Text="{Binding NewLoadoutName}" Width="250" />
+                            <Button Command="{Binding AddLoadoutCommand}" Content="Add Loadout" />
+                            <Button Command="{Binding RemoveLoadoutCommand}" Content="Remove Selected" />
+                        </StackPanel>
+                    </Grid>
                 </TabItem>
 
                 <!-- ===== BACKUP & RESTORE TAB ===== -->

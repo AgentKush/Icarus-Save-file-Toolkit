@@ -8,11 +8,17 @@ public class GameData
     private readonly string _charactersPath;
     private readonly string _profilePath;
     private readonly string _metaInventoryPath;
+    private readonly string _accoladesPath;
+    private readonly string _bestiaryPath;
+    private readonly string _loadoutsPath;
     private readonly string _backupPath;
 
     internal const string CharactersFileName = "Characters.json";
     internal const string ProfileFileName = "Profile.json";
     internal const string MetaInventoryFileName = "MetaInventory.json";
+    internal const string AccoladesFileName = "Accolades.json";
+    internal const string BestiaryFileName = "BestiaryData.json";
+    internal const string LoadoutsFileName = "Loadouts.json";
     internal const string BackupFolder = "backups";
 
     public bool ValidGamePath { get; private set; }
@@ -21,12 +27,15 @@ public class GameData
     internal string CharactersPath => _charactersPath;
     internal string ProfilePath => _profilePath;
     internal string MetaInventoryPath => _metaInventoryPath;
+    internal string AccoladesPath => _accoladesPath;
+    internal string BestiaryPath => _bestiaryPath;
+    internal string LoadoutsPath => _loadoutsPath;
     internal string BackupPath => _backupPath;
 
-    /// <summary>
-    /// Whether a MetaInventory.json file exists in the game data path.
-    /// </summary>
     public bool HasMetaInventory => File.Exists(_metaInventoryPath);
+    public bool HasAccolades => File.Exists(_accoladesPath);
+    public bool HasBestiary => File.Exists(_bestiaryPath);
+    public bool HasLoadouts => File.Exists(_loadoutsPath);
 
     public GameData(string gameDataPath)
     {
@@ -34,6 +43,9 @@ public class GameData
         _charactersPath = Path.Combine(gameDataPath, CharactersFileName);
         _profilePath = Path.Combine(gameDataPath, ProfileFileName);
         _metaInventoryPath = Path.Combine(gameDataPath, MetaInventoryFileName);
+        _accoladesPath = Path.Combine(gameDataPath, AccoladesFileName);
+        _bestiaryPath = Path.Combine(gameDataPath, BestiaryFileName);
+        _loadoutsPath = Path.Combine(gameDataPath, LoadoutsFileName);
         _backupPath = Path.Combine(Directory.GetCurrentDirectory(), BackupFolder);
 
         if (!ValidateGamePath(gameDataPath))
@@ -48,6 +60,9 @@ public class GameData
         Log.Information("Character file set to {CharactersPath}", _charactersPath);
         Log.Information("Profile file set to {ProfilePath}", _profilePath);
         Log.Information("MetaInventory file set to {MetaInventoryPath} (exists: {Exists})", _metaInventoryPath, HasMetaInventory);
+        Log.Information("Accolades file set to {AccoladesPath} (exists: {Exists})", _accoladesPath, HasAccolades);
+        Log.Information("Bestiary file set to {BestiaryPath} (exists: {Exists})", _bestiaryPath, HasBestiary);
+        Log.Information("Loadouts file set to {LoadoutsPath} (exists: {Exists})", _loadoutsPath, HasLoadouts);
         Log.Information("Backup folder set to {BackupPath}", _backupPath);
     }
 
@@ -56,6 +71,12 @@ public class GameData
     public ProfileExplorer GetProfile() => new(_profilePath);
 
     public MetaInventoryExplorer GetMetaInventory() => new(_metaInventoryPath);
+
+    public AccoladesExplorer GetAccolades() => new(_accoladesPath);
+
+    public BestiaryExplorer GetBestiary() => new(_bestiaryPath);
+
+    public LoadoutsExplorer GetLoadouts() => new(_loadoutsPath);
 
     public static bool ValidateGamePath(string gamePath)
     {
@@ -70,6 +91,56 @@ public class GameData
             .ToHashSet();
 
         return files.Contains(CharactersFileName) && files.Contains(ProfileFileName);
+    }
+
+    /// <summary>
+    /// Auto-detects the Icarus player save data folder.
+    /// Searches %LocalAppData%\Icarus\Saved\PlayerData\{SteamID}\ for valid save data.
+    /// Returns the first valid folder found, or null if none found.
+    /// </summary>
+    public static string? AutoDetectSavePath()
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var playerDataRoot = Path.Combine(localAppData, "Icarus", "Saved", "PlayerData");
+
+            if (!Directory.Exists(playerDataRoot))
+            {
+                Log.Information("Icarus PlayerData root not found at {Path}", playerDataRoot);
+                return null;
+            }
+
+            // Each subfolder is a Steam ID — find one with valid save files
+            foreach (var steamIdFolder in Directory.GetDirectories(playerDataRoot))
+            {
+                if (ValidateGamePath(steamIdFolder))
+                {
+                    Log.Information("Auto-detected save path: {Path}", steamIdFolder);
+                    return steamIdFolder;
+                }
+            }
+
+            Log.Information("No valid save data found under {Path}", playerDataRoot);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to auto-detect save path");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a path appears to be inside the game installation rather than the player save folder.
+    /// This is a common mistake — editing Content\Data won't affect actual saves.
+    /// </summary>
+    public static bool IsGameInstallPath(string path)
+    {
+        var normalized = path.Replace('\\', '/').ToLowerInvariant();
+        return normalized.Contains("/steamapps/common/icarus") ||
+               normalized.Contains("/content/data") ||
+               normalized.Contains("/icarus/icarus/content");
     }
 
     /// <summary>

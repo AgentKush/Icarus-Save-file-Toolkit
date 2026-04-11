@@ -75,7 +75,7 @@ public class Profile
 {
     public string? UserID { get; set; }
     public List<MetaResource>? MetaResources { get; set; }
-    public List<object>? UnlockedFlags { get; set; }
+    public List<int>? UnlockedFlags { get; set; }
     public List<Talent>? Talents { get; set; }
     public int NextChrSlot { get; set; }
     public int DataVersion { get; set; }

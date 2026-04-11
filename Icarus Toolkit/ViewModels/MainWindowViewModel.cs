@@ -53,6 +53,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool isWarningIconVisible;
 
+    [ObservableProperty]
+    private bool isPathWarningVisible;
+
+    [ObservableProperty]
+    private string? pathWarningText;
+
     #endregion
 
     #region Character
@@ -180,13 +186,19 @@ public partial class MainWindowViewModel : ViewModelBase
     #region Flags
 
     [ObservableProperty]
-    private ObservableCollection<int> selectedCharacterFlags = [];
+    private ObservableCollection<FlagDisplayItem> selectedCharacterFlags = [];
 
     [ObservableProperty]
     private int selectedFlagIndex = -1;
 
     [ObservableProperty]
-    private int newFlagId;
+    private FlagDropdownItem? selectedNewFlag;
+
+    /// <summary>
+    /// Available character flags for the dropdown (excludes already-added flags).
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<FlagDropdownItem> availableFlags = [];
 
     #endregion
 
@@ -207,10 +219,74 @@ public partial class MainWindowViewModel : ViewModelBase
     private ObservableCollection<Talent> profileTalents = [];
 
     [ObservableProperty]
+    private int selectedProfileTalentIndex = -1;
+
+    [ObservableProperty]
+    private string? newProfileTalentRowName;
+
+    [ObservableProperty]
+    private int newProfileTalentRank = 1;
+
+    [ObservableProperty]
     private string? profileUserId;
 
     [ObservableProperty]
     private int profileDataVersion;
+
+    // Profile (Account) Flags
+    [ObservableProperty]
+    private ObservableCollection<FlagDisplayItem> profileAccountFlags = [];
+
+    [ObservableProperty]
+    private int selectedAccountFlagIndex = -1;
+
+    [ObservableProperty]
+    private FlagDropdownItem? selectedNewAccountFlag;
+
+    [ObservableProperty]
+    private ObservableCollection<FlagDropdownItem> availableAccountFlags = [];
+
+    #endregion
+
+    #region Accolades
+
+    private AccoladesExplorer? accoladesExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasAccolades;
+
+    [ObservableProperty]
+    private ObservableCollection<AccoladeEntry> accoladeEntries = [];
+
+    [ObservableProperty]
+    private int selectedAccoladeIndex = -1;
+
+    [ObservableProperty]
+    private string? newAccoladeRowName;
+
+    [ObservableProperty]
+    private int newAccoladePoints;
+
+    #endregion
+
+    #region Bestiary
+
+    private BestiaryExplorer? bestiaryExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasBestiary;
+
+    [ObservableProperty]
+    private ObservableCollection<BestiaryEntry> bestiaryEntries = [];
+
+    [ObservableProperty]
+    private int selectedBestiaryIndex = -1;
+
+    [ObservableProperty]
+    private string? newBestiaryRowName;
+
+    [ObservableProperty]
+    private int newBestiaryPoints;
 
     #endregion
 
@@ -238,6 +314,24 @@ public partial class MainWindowViewModel : ViewModelBase
 
     #endregion
 
+    #region Loadouts
+
+    private LoadoutsExplorer? loadoutsExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasLoadouts;
+
+    [ObservableProperty]
+    private ObservableCollection<LoadoutEntry> loadoutEntries = [];
+
+    [ObservableProperty]
+    private int selectedLoadoutIndex = -1;
+
+    [ObservableProperty]
+    private string? newLoadoutName;
+
+    #endregion
+
     #region Backup & Restore
 
     [ObservableProperty]
@@ -259,19 +353,39 @@ public partial class MainWindowViewModel : ViewModelBase
         ValidGamePath = false;
         IsCharacterLoaded = false;
 
+        // 1. Try saved path first
         var savedPath = SettingsManager.GetSetting("GameDataPath") ?? "";
-        if (GameData.ValidateGamePath(savedPath))
+        if (GameData.ValidateGamePath(savedPath) && !GameData.IsGameInstallPath(savedPath))
         {
             GamePath = savedPath;
-        }
-        else
-        {
-            var selectedPath = await GetFolderFromUser("Select Game Data Folder");
-            if (selectedPath == null) return;
-            GamePath = selectedPath;
-            SettingsManager.SetSetting("GameDataPath", GamePath);
+            ReloadGameData();
+            return;
         }
 
+        // 2. Try auto-detection from AppData
+        var autoPath = GameData.AutoDetectSavePath();
+        if (autoPath != null)
+        {
+            GamePath = autoPath;
+            SettingsManager.SetSetting("GameDataPath", GamePath);
+            ShowInfo("Auto-detected save folder");
+            ReloadGameData();
+            return;
+        }
+
+        // 3. Fall back to manual folder picker
+        var selectedPath = await GetFolderFromUser("Select your Icarus PlayerData folder (AppData\\Local\\Icarus\\Saved\\PlayerData\\<SteamID>)");
+        if (selectedPath == null) return;
+
+        if (GameData.IsGameInstallPath(selectedPath))
+        {
+            ShowInfo("WARNING: That looks like the game install folder, not your save data! Check AppData\\Local\\Icarus\\Saved\\PlayerData\\");
+            IsWarningIconVisible = true;
+            Log.Warning("User selected game install path instead of save data: {Path}", selectedPath);
+        }
+
+        GamePath = selectedPath;
+        SettingsManager.SetSetting("GameDataPath", GamePath);
         ReloadGameData();
     }
 
@@ -281,11 +395,18 @@ public partial class MainWindowViewModel : ViewModelBase
         ValidGamePath = false;
         IsCharacterLoaded = false;
 
-        var selectedPath = await GetFolderFromUser("Select Game Data Folder");
+        var selectedPath = await GetFolderFromUser("Select your Icarus PlayerData folder (AppData\\Local\\Icarus\\Saved\\PlayerData\\<SteamID>)");
         if (selectedPath == null) return;
+
+        if (GameData.IsGameInstallPath(selectedPath))
+        {
+            ShowInfo("WARNING: That looks like the game install folder, not your save data! Check AppData\\Local\\Icarus\\Saved\\PlayerData\\");
+            IsWarningIconVisible = true;
+            Log.Warning("User selected game install path instead of save data: {Path}", selectedPath);
+        }
+
         GamePath = selectedPath;
         SettingsManager.SetSetting("GameDataPath", GamePath);
-
         ReloadGameData();
     }
 
@@ -340,19 +461,35 @@ public partial class MainWindowViewModel : ViewModelBase
         // Load cosmetics
         LoadCosmetics(SelectedCharacter.Cosmetic);
 
-        // Load flags
+        // Load flags with display names
         SelectedCharacterFlags.Clear();
         if (SelectedCharacter.UnlockedFlags != null)
         {
-            foreach (var flag in SelectedCharacter.UnlockedFlags)
-                SelectedCharacterFlags.Add(flag);
+            foreach (var flagId in SelectedCharacter.UnlockedFlags)
+            {
+                SelectedCharacterFlags.Add(new FlagDisplayItem
+                {
+                    Id = flagId,
+                    Name = FlagDefinitions.GetCharacterFlagName(flagId)
+                });
+            }
         }
+        RefreshAvailableFlags();
 
-        // Load profile (all MetaResources dynamically)
+        // Load profile (all MetaResources dynamically + account flags)
         LoadProfileData();
 
         // Load meta inventory
         LoadMetaInventoryData();
+
+        // Load accolades
+        LoadAccoladesData();
+
+        // Load bestiary
+        LoadBestiaryData();
+
+        // Load loadouts
+        LoadLoadoutsData();
 
         currentLoadedCharacterIndex = SelectedCharacterIndex;
         LoadText = "Load Character Data";
@@ -483,14 +620,58 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 ShowInfo("Meta inventory failed to export");
                 IsWarningIconVisible = true;
-                // Non-critical: continue with reload
+            }
+        }
+        Progress = 65;
+
+        // Export accolades if available
+        if (accoladesExplorerHandle?.Accolades != null && HasAccolades)
+        {
+            SetAccoladesValues();
+            bool accSuccess = accoladesExplorerHandle.ExportAccolades(accoladesExplorerHandle.Accolades);
+            if (!accSuccess)
+            {
+                ShowInfo("Accolades failed to export");
+                IsWarningIconVisible = true;
+            }
+        }
+        Progress = 70;
+
+        // Export bestiary if available
+        if (bestiaryExplorerHandle?.Bestiary != null && HasBestiary)
+        {
+            SetBestiaryValues();
+            bool besSuccess = bestiaryExplorerHandle.ExportBestiary(bestiaryExplorerHandle.Bestiary);
+            if (!besSuccess)
+            {
+                ShowInfo("Bestiary data failed to export");
+                IsWarningIconVisible = true;
+            }
+        }
+        Progress = 72;
+
+        // Export loadouts if available
+        if (loadoutsExplorerHandle?.Loadouts != null && HasLoadouts)
+        {
+            SetLoadoutsValues();
+            bool loadSuccess = loadoutsExplorerHandle.ExportLoadouts(loadoutsExplorerHandle.Loadouts);
+            if (!loadSuccess)
+            {
+                ShowInfo("Loadouts failed to export");
+                IsWarningIconVisible = true;
             }
         }
         Progress = 75;
 
         // Reload to verify
         LoadSelectedCharacter();
-        ShowInfo($"Saved — {charName} | User #{userId}");
+        Progress = 90;
+
+        // Post-save verification — read back Profile.json and confirm flag count
+        var verifyMsg = VerifySaveData();
+
+        ShowInfo($"Saved — {charName} | {verifyMsg}");
+        Log.Information("Post-save verification: {VerifyMsg}", verifyMsg);
 
         Progress = 100;
         WasDataExported = true;
@@ -541,15 +722,22 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void AddFlag()
     {
-        if (!SelectedCharacterFlags.Contains(NewFlagId))
+        if (SelectedNewFlag == null) return;
+
+        var flagId = SelectedNewFlag.Id;
+        if (SelectedCharacterFlags.Any(f => f.Id == flagId))
         {
-            SelectedCharacterFlags.Add(NewFlagId);
-            NewFlagId = 0;
+            ShowInfo($"Flag {SelectedNewFlag.DisplayName} already exists");
+            return;
         }
-        else
+
+        SelectedCharacterFlags.Add(new FlagDisplayItem
         {
-            ShowInfo($"Flag {NewFlagId} already exists");
-        }
+            Id = flagId,
+            Name = FlagDefinitions.GetCharacterFlagName(flagId)
+        });
+        RefreshAvailableFlags();
+        SelectedNewFlag = null;
     }
 
     [RelayCommand]
@@ -558,7 +746,24 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedFlagIndex >= 0 && SelectedFlagIndex < SelectedCharacterFlags.Count)
         {
             SelectedCharacterFlags.RemoveAt(SelectedFlagIndex);
+            RefreshAvailableFlags();
         }
+    }
+
+    [RelayCommand]
+    private void UnlockAllCharacterFlags()
+    {
+        SelectedCharacterFlags.Clear();
+        foreach (var kvp in FlagDefinitions.CharacterFlags.OrderBy(k => k.Key))
+        {
+            SelectedCharacterFlags.Add(new FlagDisplayItem
+            {
+                Id = kvp.Key,
+                Name = kvp.Value
+            });
+        }
+        RefreshAvailableFlags();
+        ShowInfo("All 45 character flags unlocked — save to apply");
     }
 
     [RelayCommand]
@@ -595,6 +800,140 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedMetaResourceIndex >= 0 && SelectedMetaResourceIndex < ProfileMetaResources.Count)
         {
             ProfileMetaResources.RemoveAt(SelectedMetaResourceIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void AddAccountFlag()
+    {
+        if (SelectedNewAccountFlag == null) return;
+
+        var flagId = SelectedNewAccountFlag.Id;
+        if (ProfileAccountFlags.Any(f => f.Id == flagId))
+        {
+            ShowInfo($"Account flag {SelectedNewAccountFlag.DisplayName} already exists");
+            return;
+        }
+
+        ProfileAccountFlags.Add(new FlagDisplayItem
+        {
+            Id = flagId,
+            Name = FlagDefinitions.GetAccountFlagName(flagId)
+        });
+        RefreshAvailableAccountFlags();
+        SelectedNewAccountFlag = null;
+    }
+
+    [RelayCommand]
+    private void RemoveAccountFlag()
+    {
+        if (SelectedAccountFlagIndex >= 0 && SelectedAccountFlagIndex < ProfileAccountFlags.Count)
+        {
+            ProfileAccountFlags.RemoveAt(SelectedAccountFlagIndex);
+            RefreshAvailableAccountFlags();
+        }
+    }
+
+    [RelayCommand]
+    private void UnlockAllAccountFlags()
+    {
+        ProfileAccountFlags.Clear();
+        foreach (var kvp in FlagDefinitions.AccountFlags.OrderBy(k => k.Key))
+        {
+            ProfileAccountFlags.Add(new FlagDisplayItem
+            {
+                Id = kvp.Key,
+                Name = kvp.Value
+            });
+        }
+        RefreshAvailableAccountFlags();
+        ShowInfo("All 100 account flags unlocked — save to apply");
+    }
+
+    [RelayCommand]
+    private void AddProfileTalent()
+    {
+        if (string.IsNullOrWhiteSpace(NewProfileTalentRowName)) return;
+        ProfileTalents.Add(new Talent
+        {
+            RowName = NewProfileTalentRowName,
+            Rank = NewProfileTalentRank
+        });
+        NewProfileTalentRowName = "";
+        NewProfileTalentRank = 1;
+    }
+
+    [RelayCommand]
+    private void RemoveProfileTalent()
+    {
+        if (SelectedProfileTalentIndex >= 0 && SelectedProfileTalentIndex < ProfileTalents.Count)
+        {
+            ProfileTalents.RemoveAt(SelectedProfileTalentIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void AddAccolade()
+    {
+        if (string.IsNullOrWhiteSpace(NewAccoladeRowName)) return;
+        AccoladeEntries.Add(new AccoladeEntry
+        {
+            RowName = NewAccoladeRowName,
+            NumPoints = NewAccoladePoints
+        });
+        NewAccoladeRowName = "";
+        NewAccoladePoints = 0;
+    }
+
+    [RelayCommand]
+    private void RemoveAccolade()
+    {
+        if (SelectedAccoladeIndex >= 0 && SelectedAccoladeIndex < AccoladeEntries.Count)
+        {
+            AccoladeEntries.RemoveAt(SelectedAccoladeIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void AddBestiaryEntry()
+    {
+        if (string.IsNullOrWhiteSpace(NewBestiaryRowName)) return;
+        BestiaryEntries.Add(new BestiaryEntry
+        {
+            RowName = NewBestiaryRowName,
+            NumPoints = NewBestiaryPoints
+        });
+        NewBestiaryRowName = "";
+        NewBestiaryPoints = 0;
+    }
+
+    [RelayCommand]
+    private void AddLoadout()
+    {
+        var name = string.IsNullOrWhiteSpace(NewLoadoutName) ? $"Loadout {LoadoutEntries.Count + 1}" : NewLoadoutName;
+        LoadoutEntries.Add(new LoadoutEntry
+        {
+            LoadoutName = name,
+            Slots = []
+        });
+        NewLoadoutName = "";
+    }
+
+    [RelayCommand]
+    private void RemoveLoadout()
+    {
+        if (SelectedLoadoutIndex >= 0 && SelectedLoadoutIndex < LoadoutEntries.Count)
+        {
+            LoadoutEntries.RemoveAt(SelectedLoadoutIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void RemoveBestiaryEntry()
+    {
+        if (SelectedBestiaryIndex >= 0 && SelectedBestiaryIndex < BestiaryEntries.Count)
+        {
+            BestiaryEntries.RemoveAt(SelectedBestiaryIndex);
         }
     }
 
@@ -664,6 +1003,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
         IsWorking = true;
         Log.Information("Loading game data from {GamePath}", GamePath);
+
+        // Check if path looks like game install instead of save data
+        if (GameData.IsGameInstallPath(GamePath))
+        {
+            IsPathWarningVisible = true;
+            PathWarningText = "WARNING: This path looks like the game installation folder, NOT your save data! " +
+                              "Your saves are at: %LocalAppData%\\Icarus\\Saved\\PlayerData\\<YourSteamID>\\ " +
+                              "Changes here won't affect your game. Click 'Change Folder' and navigate to the correct path. " +
+                              "TIP: Disable Steam Cloud sync for Icarus to prevent saves being overwritten.";
+        }
+        else
+        {
+            IsPathWarningVisible = false;
+            PathWarningText = null;
+        }
+
         gameData = new GameData(GamePath);
 
         if (gameData.ValidGamePath)
@@ -677,6 +1032,18 @@ public partial class MainWindowViewModel : ViewModelBase
             // Load meta inventory if available
             metaInventoryExplorerHandle = gameData.GetMetaInventory();
             HasMetaInventory = gameData.HasMetaInventory;
+
+            // Load accolades if available
+            accoladesExplorerHandle = gameData.GetAccolades();
+            HasAccolades = gameData.HasAccolades;
+
+            // Load bestiary if available
+            bestiaryExplorerHandle = gameData.GetBestiary();
+            HasBestiary = gameData.HasBestiary;
+
+            // Load loadouts if available
+            loadoutsExplorerHandle = gameData.GetLoadouts();
+            HasLoadouts = gameData.HasLoadouts;
 
             SelectedCharacterIndex = 0;
             ValidGamePath = true;
@@ -698,6 +1065,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ProfileMetaResources.Clear();
         ProfileTalents.Clear();
+        ProfileAccountFlags.Clear();
 
         if (PlayerProfile != null)
         {
@@ -715,6 +1083,20 @@ public partial class MainWindowViewModel : ViewModelBase
                 foreach (var talent in PlayerProfile.Talents)
                     ProfileTalents.Add(talent);
             }
+
+            // Load account flags with display names
+            if (PlayerProfile.UnlockedFlags != null)
+            {
+                foreach (var flagId in PlayerProfile.UnlockedFlags)
+                {
+                    ProfileAccountFlags.Add(new FlagDisplayItem
+                    {
+                        Id = flagId,
+                        Name = FlagDefinitions.GetAccountFlagName(flagId)
+                    });
+                }
+            }
+            RefreshAvailableAccountFlags();
         }
         else
         {
@@ -785,8 +1167,8 @@ public partial class MainWindowViewModel : ViewModelBase
         // Apply cosmetics
         SaveCosmetics(SelectedCharacter);
 
-        // Apply flags
-        SelectedCharacter.UnlockedFlags = [.. SelectedCharacterFlags];
+        // Apply flags (convert display items back to int list)
+        SelectedCharacter.UnlockedFlags = SelectedCharacterFlags.Select(f => f.Id).ToList();
 
         Log.Information("Set character values for {CharacterName}", SelectedCharacter.CharacterName);
         CharacterList[SelectedCharacterIndex] = SelectedCharacter;
@@ -802,7 +1184,10 @@ public partial class MainWindowViewModel : ViewModelBase
         // Apply profile talents
         PlayerProfile.Talents = [.. ProfileTalents];
 
-        Log.Information("Set profile values");
+        // Apply account flags (convert display items back to int list)
+        PlayerProfile.UnlockedFlags = ProfileAccountFlags.Select(f => f.Id).ToList();
+
+        Log.Information("Set profile values (flags: {FlagCount})", PlayerProfile.UnlockedFlags.Count);
     }
 
     private void SetMetaInventoryValues()
@@ -867,6 +1252,125 @@ public partial class MainWindowViewModel : ViewModelBase
         character.Cosmetic.Customization_EyeColor = CosmeticEyeColor;
     }
 
+    private void RefreshAvailableFlags()
+    {
+        var existingIds = SelectedCharacterFlags.Select(f => f.Id).ToHashSet();
+        AvailableFlags.Clear();
+        foreach (var kvp in FlagDefinitions.CharacterFlags.OrderBy(k => k.Key))
+        {
+            if (!existingIds.Contains(kvp.Key))
+            {
+                AvailableFlags.Add(new FlagDropdownItem
+                {
+                    Id = kvp.Key,
+                    DisplayName = $"{kvp.Key}: {kvp.Value}"
+                });
+            }
+        }
+    }
+
+    private void RefreshAvailableAccountFlags()
+    {
+        var existingIds = ProfileAccountFlags.Select(f => f.Id).ToHashSet();
+        AvailableAccountFlags.Clear();
+        foreach (var kvp in FlagDefinitions.AccountFlags.OrderBy(k => k.Key))
+        {
+            if (!existingIds.Contains(kvp.Key))
+            {
+                AvailableAccountFlags.Add(new FlagDropdownItem
+                {
+                    Id = kvp.Key,
+                    DisplayName = $"{kvp.Key}: {kvp.Value}"
+                });
+            }
+        }
+    }
+
+    private void LoadAccoladesData()
+    {
+        AccoladeEntries.Clear();
+
+        if (accoladesExplorerHandle?.Accolades?.Accolades != null)
+        {
+            foreach (var entry in accoladesExplorerHandle.Accolades.Accolades)
+                AccoladeEntries.Add(entry);
+        }
+    }
+
+    private void LoadBestiaryData()
+    {
+        BestiaryEntries.Clear();
+
+        if (bestiaryExplorerHandle?.Bestiary?.Entries != null)
+        {
+            foreach (var entry in bestiaryExplorerHandle.Bestiary.Entries)
+                BestiaryEntries.Add(entry);
+        }
+    }
+
+    private void SetAccoladesValues()
+    {
+        if (accoladesExplorerHandle?.Accolades == null) return;
+        accoladesExplorerHandle.Accolades.Accolades = [.. AccoladeEntries];
+        Log.Information("Set accolade values ({Count} entries)", AccoladeEntries.Count);
+    }
+
+    private void SetBestiaryValues()
+    {
+        if (bestiaryExplorerHandle?.Bestiary == null) return;
+        bestiaryExplorerHandle.Bestiary.Entries = [.. BestiaryEntries];
+        Log.Information("Set bestiary values ({Count} entries)", BestiaryEntries.Count);
+    }
+
+    private void LoadLoadoutsData()
+    {
+        LoadoutEntries.Clear();
+
+        if (loadoutsExplorerHandle?.Loadouts?.Loadouts != null)
+        {
+            foreach (var entry in loadoutsExplorerHandle.Loadouts.Loadouts)
+                LoadoutEntries.Add(entry);
+        }
+    }
+
+    private void SetLoadoutsValues()
+    {
+        if (loadoutsExplorerHandle?.Loadouts == null) return;
+        loadoutsExplorerHandle.Loadouts.Loadouts = [.. LoadoutEntries];
+        Log.Information("Set loadout values ({Count} entries)", LoadoutEntries.Count);
+    }
+
+    /// <summary>
+    /// Reads back the saved Profile.json and Characters.json to verify the data was actually written.
+    /// Returns a summary string for the status bar.
+    /// </summary>
+    private string VerifySaveData()
+    {
+        try
+        {
+            if (gameData == null) return "verification skipped";
+
+            // Re-read profile to confirm flags
+            var verifyProfile = gameData.GetProfile();
+            var profileFlagCount = verifyProfile.PlayerProfile?.UnlockedFlags?.Count ?? 0;
+
+            // Re-read characters to confirm character flags
+            var verifyChars = gameData.GetCharacters();
+            var charFlagCount = 0;
+            if (verifyChars.Characters.Count > SelectedCharacterIndex && SelectedCharacterIndex >= 0)
+            {
+                charFlagCount = verifyChars.Characters[SelectedCharacterIndex].UnlockedFlags?.Count ?? 0;
+            }
+
+            return $"Account flags: {profileFlagCount} | Char flags: {charFlagCount}";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Post-save verification failed");
+            return "verification failed — check logs";
+        }
+    }
+
     private void ShowInfo(string message)
     {
         InformationString = message;
@@ -902,4 +1406,24 @@ public class BackupEntry
     public string FullPath { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public int FileCount { get; set; }
+}
+
+/// <summary>
+/// Display model for flags in the DataGrid — shows ID and resolved name.
+/// </summary>
+public class FlagDisplayItem
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+}
+
+/// <summary>
+/// Item for the flag selection dropdown.
+/// </summary>
+public class FlagDropdownItem
+{
+    public int Id { get; set; }
+    public string DisplayName { get; set; } = "";
+
+    public override string ToString() => DisplayName;
 }
