@@ -1,24 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Text;
-using System.Threading.Tasks;
+namespace Icarus;
 
-namespace Icarus
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+internal static class ExtensionMethods
 {
-    internal static class ExtensionMethods
+    /// <summary>
+    /// Creates a deep copy of an object using JSON serialization.
+    /// This approach works with .NET 8+ and avoids the deprecated BinaryFormatter.
+    /// </summary>
+    internal static T DeepClone<T>(this T source) where T : notnull
     {
-        internal static T DeepClone<T>(this T a)
-        {
-            using (MemoryStream stream = new MemoryStream())
-            {
-                BinaryFormatter formatter = new BinaryFormatter();
-                formatter.Serialize(stream, a);
-                stream.Position = 0;
-                return (T)formatter.Deserialize(stream);
-            }
-        }
+        var json = JsonSerializer.Serialize(source);
+        return JsonSerializer.Deserialize<T>(json)
+            ?? throw new InvalidOperationException("Failed to deserialize cloned object");
     }
 }

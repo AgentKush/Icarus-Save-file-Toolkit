@@ -3,28 +3,25 @@ using Avalonia.Controls.Templates;
 using Icarus_Toolkit.ViewModels;
 using System;
 
-namespace Icarus_Toolkit
+namespace Icarus_Toolkit;
+
+public class ViewLocator : IDataTemplate
 {
-    public class ViewLocator : IDataTemplate
+    public Control? Build(object? data)
     {
-        public IControl Build(object data)
-        {
-            var name = data.GetType().FullName!.Replace("ViewModel", "View");
-            var type = Type.GetType(name);
+        if (data is null)
+            return null;
 
-            if (type != null)
-            {
-                return (Control)Activator.CreateInstance(type)!;
-            }
-            else
-            {
-                return new TextBlock { Text = "Not Found: " + name };
-            }
+        var name = data.GetType().FullName!.Replace("ViewModel", "View", StringComparison.Ordinal);
+        var type = Type.GetType(name);
+
+        if (type != null)
+        {
+            return (Control)Activator.CreateInstance(type)!;
         }
 
-        public bool Match(object data)
-        {
-            return data is ViewModelBase;
-        }
+        return new TextBlock { Text = "Not Found: " + name };
     }
+
+    public bool Match(object? data) => data is ViewModelBase;
 }

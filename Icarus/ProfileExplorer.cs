@@ -1,68 +1,97 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.IO;
+namespace Icarus;
+
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using Serilog;
 
-namespace Icarus
+public class ProfileExplorer
 {
-    public class ProfileExplorer
-    {
-        public Profile PlayerProfile;
-        private readonly string profilePath;
+    public Profile? PlayerProfile { get; private set; }
+    private readonly string _profilePath;
 
-        public ProfileExplorer(string profilePath)
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    public ProfileExplorer(string profilePath)
+    {
+        _profilePath = profilePath;
+        RefreshProfile();
+    }
+
+    /// <summary>
+    /// Exports profile to the save file using atomic write (temp file + rename).
+    /// </summary>
+    public bool ExportProfile(Profile profile)
+    {
+        var tempPath = _profilePath + ".tmp";
+
+        try
         {
-            this.profilePath = profilePath;
-            RefreshProfile();
-        }
+            var json = JsonSerializer.Serialize(profile, SerializerOptions);
 
-        public bool ExportProfile(Profile profile)
+            // Atomic write: write to temp file first, then replace
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, _profilePath, overwrite: true);
+
+            Log.Information("Exported profile");
+            return true;
+        }
+        catch (Exception ex)
         {
-            var serializerOptions = new JsonSerializerOptions() { WriteIndented = true };
+            Log.Error(ex, "Failed to export profile");
 
-            try
-            {
-                File.WriteAllText(profilePath, JsonSerializer.Serialize(profile, serializerOptions));
-                Log.Information("Exported profile");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Log.Error(e.Message);
-                return false;
-            }
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+            catch { /* best effort cleanup */ }
+
+            return false;
         }
+    }
 
-        public void RefreshProfile()
+    /// <summary>
+    /// Reloads profile from the save file. Handles corrupt/missing files gracefully.
+    /// </summary>
+    public void RefreshProfile()
+    {
+        try
         {
-            PlayerProfile = JsonSerializer.Deserialize<Profile>(File.ReadAllText(profilePath));
+            var json = File.ReadAllText(_profilePath);
+            PlayerProfile = JsonSerializer.Deserialize<Profile>(json);
+
+            if (PlayerProfile == null)
+                Log.Warning("Profile deserialization returned null from {ProfilePath}", _profilePath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to refresh profile from {ProfilePath}", _profilePath);
+            PlayerProfile = null;
         }
     }
+}
 
-    public class Profile
-    {
-        public string UserID { get; set; }
-        public List<MetaResource> MetaResources { get; set; }
-        public List<object> UnlockedFlags { get; set; }
-        public List<Talent> Talents { get; set; }
-        public int NextChrSlot { get; set; }
-        public int DataVersion { get; set; }
-    }
+public class Profile
+{
+    public string? UserID { get; set; }
+    public List<MetaResource>? MetaResources { get; set; }
+    public List<object>? UnlockedFlags { get; set; }
+    public List<Talent>? Talents { get; set; }
+    public int NextChrSlot { get; set; }
+    public int DataVersion { get; set; }
 
-    public class MetaResource
-    {
-        public string MetaRow { get; set; }
-        public int Count { get; set; }
-    }
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
 
-    public class Talent
-    {
-        public string RowName { get; set; }
-        public int Rank { get; set; }
-    }
+public class MetaResource
+{
+    public string? MetaRow { get; set; }
+    public int Count { get; set; }
+}
+
+public class Talent
+{
+    public string? RowName { get; set; }
+    public int Rank { get; set; }
 }

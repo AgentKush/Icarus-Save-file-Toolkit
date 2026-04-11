@@ -1,11 +1,7 @@
-using ReactiveUI;
-using System;
-using System.Collections.Generic;
-using System.Text;
+using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace Icarus_Toolkit.ViewModels
+namespace Icarus_Toolkit.ViewModels;
+
+public class ViewModelBase : ObservableObject
 {
-    public class ViewModelBase : ReactiveObject
-    {
-    }
 }

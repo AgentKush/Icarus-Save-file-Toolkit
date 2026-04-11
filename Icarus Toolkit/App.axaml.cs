@@ -1,30 +1,30 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Icarus_Toolkit.Utils;
 using Icarus_Toolkit.ViewModels;
 using Icarus_Toolkit.Views;
-using System;
 
-namespace Icarus_Toolkit
+namespace Icarus_Toolkit;
+
+public partial class App : Application
 {
-    public partial class App : Application
+    public override void Initialize()
     {
-        public override void Initialize()
-        {
-            AvaloniaXamlLoader.Load(this);
-        }
+        AvaloniaXamlLoader.Load(this);
+    }
 
-        public override void OnFrameworkInitializationCompleted()
+    public override void OnFrameworkInitializationCompleted()
+    {
+        SettingsManager.InitLog();
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.MainWindow = new MainWindow
             {
-                desktop.MainWindow = new MainWindow
-                {
-                    DataContext = new MainWindowViewModel(),
-                };
-            }
-            base.OnFrameworkInitializationCompleted();
-            Utils.Utils.InitLog();
+                DataContext = new MainWindowViewModel(),
+            };
         }
+        base.OnFrameworkInitializationCompleted();
     }
 }

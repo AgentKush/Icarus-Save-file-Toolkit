@@ -1,22 +1,16 @@
 using Avalonia.Controls;
-using Avalonia.Media;
-using Icarus_Toolkit.ViewModels;
-using JetBrains.Annotations;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
 using Serilog;
 
-namespace Icarus_Toolkit.Views
+namespace Icarus_Toolkit.Views;
+
+public partial class MainWindow : Window
 {
-    public partial class MainWindow : Window
+    public static MainWindow? MainWindowHandle { get; private set; }
+
+    public MainWindow()
     {
-        public static MainWindow MainWindowHandle { get; private set; }
-        public MainWindow()
-        {
-            InitializeComponent();
-            MainWindowHandle = this;
-            Log.Information("Application start");
-        }
+        InitializeComponent();
+        MainWindowHandle = this;
+        Log.Information("Application start");
     }
 }
