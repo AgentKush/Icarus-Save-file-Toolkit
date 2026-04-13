@@ -59,6 +59,51 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? pathWarningText;
 
+    // Icon system
+    private readonly IconResolver _iconResolver = new();
+
+    [ObservableProperty]
+    private string? iconFolderPath;
+
+    [ObservableProperty]
+    private int iconCount;
+
+    /// <summary>
+    /// When the icon folder path changes, rebuild the icon index and persist the setting.
+    /// </summary>
+    partial void OnIconFolderPathChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value) && Directory.Exists(value))
+        {
+            _iconResolver.BuildIndex(value);
+            IconCount = _iconResolver.IndexedCount;
+            SettingsManager.SetSetting("IconFolderPath", value);
+            Log.Information("Icon folder set: {Path} ({Count} index entries)", value, IconCount);
+
+            // Re-apply icons to any already-loaded inventory items
+            foreach (var item in MetaInventoryItems)
+            {
+                item.IconImage = _iconResolver.GetIcon(item.RowName);
+            }
+        }
+        else
+        {
+            IconCount = 0;
+        }
+    }
+
+    /// <summary>
+    /// Initialize the icon resolver from saved settings on startup.
+    /// </summary>
+    private void InitializeIcons()
+    {
+        var savedIconPath = SettingsManager.GetSetting("IconFolderPath");
+        if (!string.IsNullOrEmpty(savedIconPath) && Directory.Exists(savedIconPath))
+        {
+            IconFolderPath = savedIconPath; // triggers OnIconFolderPathChanged
+        }
+    }
+
     #endregion
 
     #region Character
@@ -408,6 +453,10 @@ public partial class MainWindowViewModel : ViewModelBase
         ValidGamePath = false;
         IsCharacterLoaded = false;
 
+        // Load icon folder from saved settings (idempotent — skips if already loaded)
+        if (IconFolderPath == null)
+            InitializeIcons();
+
         // 1. Try saved path first
         var savedPath = SettingsManager.GetSetting("GameDataPath") ?? "";
         if (GameData.ValidateGamePath(savedPath) && !GameData.IsGameInstallPath(savedPath))
@@ -463,6 +512,16 @@ public partial class MainWindowViewModel : ViewModelBase
         GamePath = selectedPath;
         SettingsManager.SetSetting("GameDataPath", GamePath);
         ReloadGameData();
+    }
+
+    [RelayCommand]
+    private async Task BrowseIconFolder()
+    {
+        var selectedPath = await GetFolderFromUser("Select your extracted Icarus icons folder");
+        if (selectedPath == null) return;
+
+        IconFolderPath = selectedPath; // triggers OnIconFolderPathChanged
+        ShowInfo($"Loaded {IconCount} icon entries from {Path.GetFileName(selectedPath)}");
     }
 
     [RelayCommand]
@@ -1373,6 +1432,7 @@ public partial class MainWindowViewModel : ViewModelBase
                         Count = item.EffectiveCount,
                         Durability = durStr,
                         Alterations = alterations,
+                        IconImage = _iconResolver.GetIcon(rowName),
                         SourceItem = item
                     });
                 }
@@ -1808,8 +1868,9 @@ public class FlagDropdownItem
 /// <summary>
 /// Display model for workshop inventory items.
 /// Handles both simple workshop items (MetaRow set) and full item instances (ItemStaticData).
+/// Uses ObservableObject so IconImage can update after initial load.
 /// </summary>
-public class InventoryDisplayItem
+public partial class InventoryDisplayItem : ObservableObject
 {
     /// <summary>Display name resolved from MetaRow or ItemStaticData.RowName.</summary>
     public string DisplayName { get; set; } = "";
@@ -1828,6 +1889,10 @@ public class InventoryDisplayItem
 
     /// <summary>Alteration/upgrade names if any.</summary>
     public string Alterations { get; set; } = "";
+
+    /// <summary>Item icon loaded from extracted game icons.</summary>
+    [ObservableProperty]
+    private Avalonia.Media.Imaging.Bitmap? iconImage;
 
     /// <summary>Reference to original item for preserving all data during round-trip.</summary>
     public InventoryItem? SourceItem { get; set; }
