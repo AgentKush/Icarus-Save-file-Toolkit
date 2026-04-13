@@ -1,22 +1,23 @@
 r"""
-Icarus Image Extractor v7 — Extracts ALL images from game exports.
+Icarus Image Extractor v8 — Extracts ALL images from the game.
 
-No external tools required! Uses pure Python (Pillow) for DDS→PNG conversion.
-Auto-detects your Icarus install location.
+No external tools required! Extracts directly from game PAK files or FModel exports.
+Uses pure Python (Pillow) for DDS→PNG conversion. Auto-detects your Icarus install.
 
-Extracts: Item icons, loading screens, backgrounds, cinematics, biome art,
-          marketing art, VFX textures, environment art, creature textures,
-          and everything else with texture data.
+Extracts up to ~20,000 Texture2D assets: item icons, loading screens, backgrounds,
+cinematics, biome art, marketing art, VFX textures, environment art, creature
+textures, weapon textures, character textures, world textures, and everything else.
 
 Requirements:
   pip install Pillow     (auto-installed if missing)
 
 Usage:
-  python extract_all_icons.py                          (auto-detect, UI icons only)
-  python extract_all_icons.py --all                    (extract ALL images in game)
+  python extract_all_icons.py                          (extract ALL ~20k textures!)
+  python extract_all_icons.py --icons                  (UI icons only)
+  python extract_all_icons.py --game                   (force PAK extraction, skip FModel)
   python extract_all_icons.py --loading-screens        (just loading screens)
   python extract_all_icons.py --backgrounds            (just backgrounds)
-  python extract_all_icons.py --base "D:\Games\Icarus\Exports\Icarus\Content"
+  python extract_all_icons.py --base "D:\Exports\Icarus\Content" (use FModel exports)
   python extract_all_icons.py --out "C:\MyIcons"
   python extract_all_icons.py --filter "Lithium"
   python extract_all_icons.py --force                  (re-extract all, overwrite existing)
@@ -996,8 +997,9 @@ def _try_oodle_decompress(pak_path, f, entry):
     return None
 
 
-def unpack_paks_to_temp(paks_dir, search_paths, temp_dir, name_filter=None):
+def unpack_paks_to_temp(paks_dir, search_paths, temp_dir, name_filter=None, extract_all=False):
     """Extract texture files from PAK files into a temp directory structure.
+    If extract_all=True, extracts ALL .uexp/.uasset/.ubulk files (for --all mode).
     Returns the temp base path (equivalent to an exports Content folder)."""
     print('[*] Reading PAK files...')
     pak_files = sorted(glob.glob(os.path.join(paks_dir, '*.pak')))
@@ -1005,19 +1007,13 @@ def unpack_paks_to_temp(paks_dir, search_paths, temp_dir, name_filter=None):
         return None
 
     # Build a set of path prefixes we're interested in
-    search_prefixes = set()
-    for sp in search_paths:
-        # Normalize to forward slashes for matching PAK paths
-        prefix = sp.replace('\\', '/').lower()
-        search_prefixes.add(prefix)
-
-    # Also add the prefix without leading parts for matching
     search_prefixes_alt = set()
-    for sp in search_paths:
-        prefix = sp.replace('\\', '/')
-        search_prefixes_alt.add(prefix.lower())
-        # PAK paths often start with "Icarus/Content/" or just the asset path
-        search_prefixes_alt.add(('Icarus/Content/' + prefix).lower())
+    if not extract_all:
+        for sp in search_paths:
+            prefix = sp.replace('\\', '/')
+            search_prefixes_alt.add(prefix.lower())
+            # PAK paths often start with "Icarus/Content/" or just the asset path
+            search_prefixes_alt.add(('Icarus/Content/' + prefix).lower())
 
     all_entries = {}  # path -> (pak_path, entry)
     total_entries = 0
@@ -1032,23 +1028,27 @@ def unpack_paks_to_temp(paks_dir, search_paths, temp_dir, name_filter=None):
         for path, entry in entries.items():
             path_lower = path.lower().replace('\\', '/')
 
-            # Check if this file is in a directory we want
-            matched = False
-            for prefix in search_prefixes_alt:
-                if prefix in path_lower:
-                    matched = True
-                    break
+            if extract_all:
+                # --all mode: grab every potential texture file from every path
+                matched = True
+            else:
+                # Filtered mode: only extract from requested directories
+                matched = False
+                for prefix in search_prefixes_alt:
+                    if prefix in path_lower:
+                        matched = True
+                        break
 
-            if not matched:
-                # Also check for any 2DArt or Textures path
-                if '/2dart/' in path_lower or '/textures/' in path_lower or '/ui/' in path_lower:
-                    matched = True
+                if not matched:
+                    # Also check for any 2DArt or Textures path
+                    if '/2dart/' in path_lower or '/textures/' in path_lower or '/ui/' in path_lower:
+                        matched = True
 
             if not matched:
                 continue
 
-            # Only want .uasset and .uexp files
-            if not (path_lower.endswith('.uasset') or path_lower.endswith('.uexp')):
+            # Want .uasset, .uexp, and .ubulk files (ubulk has large texture mip data)
+            if not (path_lower.endswith('.uasset') or path_lower.endswith('.uexp') or path_lower.endswith('.ubulk')):
                 continue
 
             if name_filter and name_filter.lower() not in path_lower:
@@ -1060,7 +1060,7 @@ def unpack_paks_to_temp(paks_dir, search_paths, temp_dir, name_filter=None):
 
         if texture_count > 0:
             total_entries += texture_count
-            print(f'    {pak_name}: {texture_count} texture files found')
+            print(f'    {pak_name}: {texture_count} asset files found')
 
     if not all_entries:
         print('    No matching texture files found in PAK files.')
@@ -1680,9 +1680,11 @@ def build_search_paths(args):
             paths.extend(p)
         return paths, True  # True = also do deep scan
 
-    if not any_category:
-        # Default: just UI icons
-        return UI_ICON_PATHS, False
+    if not any_category and not args.icons:
+        # Default: extract ALL textures (deep scan everything)
+        for _, (_, p) in IMAGE_CATEGORIES.items():
+            paths.extend(p)
+        return paths, True
 
     # Specific categories requested
     if args.icons:
@@ -1711,7 +1713,7 @@ def build_search_paths(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Icarus Image Extractor v7 — Extracts ALL images from game files. '
+        description='Icarus Image Extractor v8 — Extracts ALL images from game files. '
                     'No external tools needed! Works directly from game install or FModel exports.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='MODES:\n'
@@ -1755,9 +1757,9 @@ def main():
 
     # Category flags
     parser.add_argument('--all', action='store_true',
-                        help='Extract ALL image types (icons, loading screens, backgrounds, etc.)')
+                        help='Extract ALL textures (this is now the default!)')
     parser.add_argument('--icons', action='store_true', default=False,
-                        help='Extract UI icons (items, achievements, talents, HUD)')
+                        help='Extract ONLY UI icons (items, achievements, talents, HUD)')
     parser.add_argument('--loading-screens', action='store_true',
                         help='Extract loading screen art')
     parser.add_argument('--backgrounds', action='store_true',
@@ -1779,7 +1781,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f'=== Icarus Image Extractor v7 ===\n')
+    print(f'=== Icarus Image Extractor v8 ===\n')
 
     # Ensure Pillow is available
     if not args.dry_run:
@@ -1790,19 +1792,19 @@ def main():
     search_paths, do_deep_scan = build_search_paths(args)
 
     # Print what we're extracting
-    if args.all:
-        print('[*] Mode: Extract ALL images')
+    if do_deep_scan:
+        print('[*] Mode: Extract ALL textures (deep scan)')
     elif args.game:
         print('[*] Mode: Direct game extraction (PAK files)')
     else:
         active = []
         for cat_key, (cat_name, _) in IMAGE_CATEGORIES.items():
-            flag_name = cat_key.replace('_', '-')
             if getattr(args, cat_key.replace('-', '_'), False):
                 active.append(cat_name)
-        if not active:
-            active = ['UI Icons (default)']
-        print(f'[*] Categories: {", ".join(active)}')
+        if active:
+            print(f'[*] Categories: {", ".join(active)}')
+        else:
+            print('[*] Mode: Extract ALL textures')
 
     # --- Resolve source path ---
     temp_dir = None
@@ -1830,55 +1832,42 @@ def main():
         temp_dir = tempfile.mkdtemp(prefix='icarus_extract_')
         print(f'[*] Temp directory: {temp_dir}')
 
-        base_path = unpack_paks_to_temp(paks_dir, search_paths, temp_dir, args.filter)
+        base_path = unpack_paks_to_temp(paks_dir, search_paths, temp_dir, args.filter, extract_all=do_deep_scan)
         if not base_path:
             print('ERROR: Could not extract any files from PAK files.')
             print('       The PAK files may use unsupported compression (Oodle).')
             print('       Try using FModel to export the game files first.')
             sys.exit(1)
     else:
-        # Exports mode — use FModel exports or unpacked files
+        # Smart mode: try exports first, auto-switch to game PAKs if not found
         base_path = args.base
         if not base_path:
             print('[*] Looking for Icarus game data...')
+
+            # Check for FModel exports first (they have JSON metadata = better results)
             base_path = find_icarus_exports()
             if base_path:
                 print(f'    Found exports: {base_path}')
             else:
-                # Try to find game install and suggest --game flag
+                # No exports — auto-switch to game PAK extraction
+                print('    No FModel exports found — extracting from game files directly...')
                 paks_dir = find_game_paks_dir()
-                if paks_dir:
-                    print(f'    No exports found, but game is installed at:')
-                    print(f'    {os.path.dirname(os.path.dirname(paks_dir))}')
-                    print(f'\n    TIP: Use --game flag to extract directly from game files!')
-                    print(f'         python extract_all_icons.py --game\n')
-
-                print('    Could not find FModel exports.')
-                print('    Options:')
-                print('      1. Use --game flag to extract from PAK files directly')
-                print('      2. Export with FModel first, then run this script')
-                print('      3. Specify path with --base "path/to/exports/Content"\n')
-                base_path = prompt_path('    Enter path to exports Content folder (or press Enter for --game mode): ')
-                if not base_path:
-                    # Auto-switch to game mode
-                    if paks_dir:
-                        print('\n[*] Switching to game mode...')
-                        temp_dir = tempfile.mkdtemp(prefix='icarus_extract_')
-                        base_path = unpack_paks_to_temp(paks_dir, search_paths, temp_dir, args.filter)
-                        if not base_path:
-                            print('ERROR: Could not extract from PAK files.')
-                            sys.exit(1)
-                    else:
-                        paks_dir = prompt_path('    Enter path to Icarus/Content/Paks: ')
-                        if paks_dir:
-                            temp_dir = tempfile.mkdtemp(prefix='icarus_extract_')
-                            base_path = unpack_paks_to_temp(paks_dir, search_paths, temp_dir, args.filter)
-                            if not base_path:
-                                print('ERROR: Could not extract from PAK files.')
-                                sys.exit(1)
-                        else:
-                            print('ERROR: No source path provided. Exiting.')
-                            sys.exit(1)
+                if not paks_dir:
+                    paks_dir = prompt_path('    Could not auto-detect game. Enter path to Icarus/Content/Paks: ')
+                if paks_dir and os.path.isdir(paks_dir):
+                    print(f'    Found game: {paks_dir}')
+                    temp_dir = tempfile.mkdtemp(prefix='icarus_extract_')
+                    print(f'[*] Temp directory: {temp_dir}')
+                    base_path = unpack_paks_to_temp(paks_dir, search_paths, temp_dir, args.filter, extract_all=do_deep_scan)
+                    if not base_path:
+                        print('ERROR: Could not extract from PAK files.')
+                        sys.exit(1)
+                else:
+                    print('ERROR: Could not find Icarus game data.')
+                    print('  Options:')
+                    print('    python extract_all_icons.py --game            (extract from PAK files)')
+                    print('    python extract_all_icons.py --base "path"     (use FModel exports)')
+                    sys.exit(1)
 
     if not os.path.isdir(base_path):
         print(f'ERROR: Directory not found: {base_path}')
