@@ -1,4 +1,4 @@
-"""
+r"""
 Icarus icon extractor v3 - Extracts ALL item icons from game exports.
 Scans the entire Item_Icons directory tree for .uexp files with matching .json metadata.
 Creates DDS files then converts to PNG with texconv.
@@ -7,7 +7,7 @@ Usage:
   python extract_all_icons.py
   python extract_all_icons.py --base "E:\SteamLibrary\steamapps\common\Icarus\Exports\Icarus\Content"
   python extract_all_icons.py --out "C:\Users\you\Desktop\all_icons"
-  python extract_all_icons.py --filter "Lithium"  # only extract icons matching a keyword
+  python extract_all_icons.py --filter "Lithium"
 """
 import struct, json, os, subprocess, glob, argparse, sys
 
@@ -18,21 +18,21 @@ DEFAULT_BASE = r'E:\SteamLibrary\steamapps\common\Icarus\Exports\Icarus\Content'
 
 # All known icon directories under Assets/2DArt/UI
 ICON_SEARCH_PATHS = [
-    r'Assets\2DArt\UI\Items\Item_Icons',
-    r'Assets\2DArt\UI\Items',
-    r'Assets\2DArt\UI\Workshop',
-    r'Assets\2DArt\UI\Modules',
-    r'Assets\2DArt\UI\Weapons',
-    r'Assets\2DArt\UI\Tools',
-    r'Assets\2DArt\UI\Equipment',
-    r'Assets\2DArt\UI\Talents',
-    r'Assets\2DArt\UI\Mounts',
-    r'Assets\2DArt\UI\Pets',
-    r'Assets\2DArt\UI\Resources',
-    r'Assets\2DArt\UI\Armour',
-    r'Assets\2DArt\UI\Consumables',
-    r'Assets\2DArt\UI\StatusEffects',
-    r'Assets\2DArt\UI',
+    os.path.join('Assets', '2DArt', 'UI', 'Items', 'Item_Icons'),
+    os.path.join('Assets', '2DArt', 'UI', 'Items'),
+    os.path.join('Assets', '2DArt', 'UI', 'Workshop'),
+    os.path.join('Assets', '2DArt', 'UI', 'Modules'),
+    os.path.join('Assets', '2DArt', 'UI', 'Weapons'),
+    os.path.join('Assets', '2DArt', 'UI', 'Tools'),
+    os.path.join('Assets', '2DArt', 'UI', 'Equipment'),
+    os.path.join('Assets', '2DArt', 'UI', 'Talents'),
+    os.path.join('Assets', '2DArt', 'UI', 'Mounts'),
+    os.path.join('Assets', '2DArt', 'UI', 'Pets'),
+    os.path.join('Assets', '2DArt', 'UI', 'Resources'),
+    os.path.join('Assets', '2DArt', 'UI', 'Armour'),
+    os.path.join('Assets', '2DArt', 'UI', 'Consumables'),
+    os.path.join('Assets', '2DArt', 'UI', 'StatusEffects'),
+    os.path.join('Assets', '2DArt', 'UI'),
 ]
 
 # DDS constants
@@ -47,8 +47,12 @@ DDPF_RGB         = 0x40
 DDPF_ALPHAPIXELS = 0x1
 DDSCAPS_TEXTURE  = 0x1000
 
-UEXP_TRAILER_SIZE = 28
-BULK_HEADER_SIZE = 20
+# UE4 .uexp structure constants (verified from binary analysis of Icarus exports):
+#   Each mip entry: [BulkData header(24)] [pixel data] [SizeX(4) + SizeY(4) + SizeZ(4)]
+#   After all mips: [bIsVirtual(4)] [FName_None(8)] [package_tag(4)]
+BULK_HEADER_SIZE = 24   # FBulkData: flags(4) + count(4) + sizeOnDisk(4) + offsetInFile(8) + extra(4)
+MIP_FOOTER_SIZE  = 12   # SizeX(4) + SizeY(4) + SizeZ(4) after each mip's payload
+UEXP_TRAILER_SIZE = 16  # bIsVirtual(4) + FName_None(8) + package_tag(4)
 
 
 def make_dds_header(width, height, pixel_format, data_size):
@@ -80,6 +84,42 @@ def make_dds_header(width, height, pixel_format, data_size):
     return result
 
 
+def detect_inter_mip_gap(mips):
+    """Auto-detect the gap between mip payloads using OffsetInFile from JSON metadata.
+    Returns (bulk_header_size, mip_footer_size) or None if detection fails."""
+    if len(mips) < 2:
+        return None
+    try:
+        offsets = []
+        sizes = []
+        for m in mips:
+            bd = m['BulkData']
+            off_str = bd.get('OffsetInFile', '')
+            if isinstance(off_str, str) and off_str.startswith('0x'):
+                offsets.append(int(off_str, 16))
+            elif isinstance(off_str, (int, float)):
+                offsets.append(int(off_str))
+            else:
+                return None
+            sizes.append(bd.get('SizeOnDisk', bd.get('ElementCount', 0)))
+
+        # Compute gaps between consecutive mips
+        gaps = [offsets[i+1] - (offsets[i] + sizes[i]) for i in range(len(mips)-1)]
+        if not gaps or any(g <= 0 or g > 128 for g in gaps):
+            return None
+
+        # All gaps should be identical (bulk_header + mip_footer)
+        gap = gaps[0]
+        if not all(g == gap for g in gaps):
+            return None
+
+        # Gap = MIP_FOOTER(12) + BULK_HEADER
+        # MIP_FOOTER is SizeX(4)+SizeY(4)+SizeZ(4) = 12 bytes
+        return (gap - 12, 12)  # (bulk_header_size, mip_footer_size)
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
 def extract_texture_data(uexp_path, json_path):
     """Extract raw texture data from a .uexp file using its .json metadata."""
     if not os.path.exists(json_path) or not os.path.exists(uexp_path):
@@ -107,9 +147,19 @@ def extract_texture_data(uexp_path, json_path):
 
         uexp_size = os.path.getsize(uexp_path)
 
-        # Offset formula: uexp = [properties] [bulk_hdr_0][mip0] [bulk_hdr_1][mip1] ... [trailer]
-        total_bulk = num_mips * BULK_HEADER_SIZE + total_mip_data + UEXP_TRAILER_SIZE
-        mip0_offset = uexp_size - total_bulk + BULK_HEADER_SIZE
+        # Auto-detect bulk header size from OffsetInFile gaps, fall back to defaults
+        detected = detect_inter_mip_gap(mips)
+        if detected:
+            bh_size, mf_size = detected
+        else:
+            bh_size, mf_size = BULK_HEADER_SIZE, MIP_FOOTER_SIZE
+
+        # UE4 .uexp layout:
+        #   [properties] [BH0][mip0][dim0] [BH1][mip1][dim1] ... [BHn][mipN][dimN] [trailer]
+        # Each mip overhead = bulk_header + mip_footer (SizeX+SizeY+SizeZ)
+        per_mip_overhead = bh_size + mf_size
+        total_bulk = num_mips * per_mip_overhead + total_mip_data + UEXP_TRAILER_SIZE
+        mip0_offset = uexp_size - total_bulk + bh_size
 
         if mip0_offset < 0 or mip0_offset + mip0_size > uexp_size:
             return None, f'bad offset {mip0_offset} (uexp={uexp_size})'
@@ -254,6 +304,8 @@ def main():
                         help='Only extract icons matching this keyword (e.g. "Lithium", "Bow")')
     parser.add_argument('--dry-run', action='store_true',
                         help='List icons that would be extracted without actually extracting')
+    parser.add_argument('--force', action='store_true',
+                        help='Re-extract icons even if they already exist (overwrite)')
     parser.add_argument('--organize', action='store_true', default=True,
                         help='Organize output into subdirectories by category')
     args = parser.parse_args()
@@ -305,8 +357,8 @@ def main():
         else:
             out_path = os.path.join(args.out, out_name)
 
-        # Skip if already extracted
-        if os.path.exists(out_path):
+        # Skip if already extracted (unless --force)
+        if os.path.exists(out_path) and not args.force:
             skipped.append(out_name)
             continue
 
