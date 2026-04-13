@@ -4,7 +4,7 @@ Icarus Image Extractor v8 — Extracts ALL images from the game.
 No external tools required! Extracts directly from game PAK files or FModel exports.
 Uses pure Python (Pillow) for DDS→PNG conversion. Auto-detects your Icarus install.
 
-Extracts up to ~20,000 Texture2D assets: item icons, loading screens, backgrounds,
+Extracts 23,000+ Texture2D assets: item icons, loading screens, backgrounds,
 cinematics, biome art, marketing art, VFX textures, environment art, creature
 textures, weapon textures, character textures, world textures, and everything else.
 
@@ -1599,7 +1599,9 @@ def find_all_deep(base_path, name_filter=None):
     Used with --all flag to extract everything."""
     icons = {}
     scanned_dirs = set()
-    print('[*] Deep scanning entire Content directory (this may take a moment)...')
+    checked = 0
+    textures = 0
+    print('[*] Deep scanning entire Content directory...')
 
     for root, dirs, files in os.walk(base_path):
         real_root = os.path.realpath(root)
@@ -1607,10 +1609,18 @@ def find_all_deep(base_path, name_filter=None):
             continue
         scanned_dirs.add(real_root)
 
-        for filename in files:
-            if not filename.lower().endswith('.uexp'):
-                continue
+        uexp_files = [f for f in files if f.lower().endswith('.uexp')]
+        if not uexp_files:
+            continue
 
+        # Show which directory we're scanning
+        rel_dir = os.path.relpath(root, base_path)
+        if rel_dir == '.':
+            rel_dir = '(root)'
+        print(f'\r    Scanning: {rel_dir[:80]:<80}  [{textures} textures found]', end='', flush=True)
+
+        for filename in uexp_files:
+            checked += 1
             uexp_path = os.path.join(root, filename)
             json_path = uexp_path.replace('.uexp', '.json')
             has_json = os.path.exists(json_path)
@@ -1629,6 +1639,8 @@ def find_all_deep(base_path, name_filter=None):
             else:
                 if not _quick_texture_check(uexp_path):
                     continue
+
+            textures += 1
 
             # Build output name preserving directory structure
             rel = os.path.relpath(uexp_path, base_path)
@@ -1653,6 +1665,8 @@ def find_all_deep(base_path, name_filter=None):
             if out_name not in icons or len(uexp_path) < len(icons[out_name]):
                 icons[out_name] = uexp_path
 
+    # Clear the progress line
+    print(f'\r    Scanned {checked} files, found {textures} textures' + ' ' * 40)
     return icons
 
 
@@ -1941,8 +1955,11 @@ def main():
             continue
 
         ok, msg = extract_icon(src, out_path)
+        total = len(images)
+        pct = int(i / total * 100)
         status = 'OK  ' if ok else 'FAIL'
-        print(f'  [{i}/{len(images)}] {status}  {out_name} ({msg})')
+        bar = f'[{"#" * (pct // 5)}{"." * (20 - pct // 5)}]'
+        print(f'  {bar} {pct:3d}% [{i}/{total}] {status}  {out_name} ({msg})')
         (good if ok else bad).append(out_name if ok else (out_name, msg))
 
     # Cleanup temp dir
