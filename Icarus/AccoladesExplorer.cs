@@ -58,6 +58,10 @@ public class AccoladesExplorer
 
             if (Accolades == null)
                 Log.Warning("Accolades deserialization returned null from {Path}", _accoladesPath);
+            else
+                Log.Information("Loaded accolades: {InProgress} in-progress, {Completed} completed",
+                    Accolades.Accolades?.Count ?? 0,
+                    Accolades.CompletedAccolades?.Count ?? 0);
         }
         catch (Exception ex)
         {
@@ -70,6 +74,9 @@ public class AccoladesExplorer
 public class AccoladesData
 {
     public List<AccoladeEntry>? Accolades { get; set; }
+    public List<CompletedAccoladeEntry>? CompletedAccolades { get; set; }
+    public Dictionary<string, JsonElement>? PlayerTrackers { get; set; }
+    public Dictionary<string, JsonElement>? PlayerTaskListTrackers { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -82,4 +89,20 @@ public class AccoladeEntry
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+public class CompletedAccoladeEntry
+{
+    public AccoladeReference? Accolade { get; set; }
+    public string? TimeCompleted { get; set; }
+    public string? ProspectID { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+public class AccoladeReference
+{
+    public string? RowName { get; set; }
+    public string? DataTableName { get; set; }
 }

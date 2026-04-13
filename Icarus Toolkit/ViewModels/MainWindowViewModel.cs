@@ -278,7 +278,16 @@ public partial class MainWindowViewModel : ViewModelBase
     private ObservableCollection<AccoladeEntry> accoladeEntries = [];
 
     [ObservableProperty]
+    private ObservableCollection<AccoladeDisplayItem> completedAccoladeItems = [];
+
+    [ObservableProperty]
+    private int completedAccoladeCount;
+
+    [ObservableProperty]
     private int selectedAccoladeIndex = -1;
+
+    [ObservableProperty]
+    private int selectedCompletedAccoladeIndex = -1;
 
     [ObservableProperty]
     private string? newAccoladeRowName;
@@ -1649,12 +1658,70 @@ public partial class MainWindowViewModel : ViewModelBase
     private void LoadAccoladesData()
     {
         AccoladeEntries.Clear();
+        CompletedAccoladeItems.Clear();
 
-        if (accoladesExplorerHandle?.Accolades?.Accolades != null)
+        if (accoladesExplorerHandle?.Accolades == null) return;
+
+        // In-progress accolades
+        if (accoladesExplorerHandle.Accolades.Accolades != null)
         {
             foreach (var entry in accoladesExplorerHandle.Accolades.Accolades)
                 AccoladeEntries.Add(entry);
         }
+
+        // Completed accolades — build display models with names, descriptions, icons
+        if (accoladesExplorerHandle.Accolades.CompletedAccolades != null)
+        {
+            foreach (var completed in accoladesExplorerHandle.Accolades.CompletedAccolades)
+            {
+                var rowName = completed.Accolade?.RowName ?? "Unknown";
+                var info = AccoladeData.GetInfo(rowName);
+
+                // Parse the timestamp "2023.01.03-06.27.38" → readable date
+                var dateDisplay = FormatAccoladeDate(completed.TimeCompleted);
+
+                CompletedAccoladeItems.Add(new AccoladeDisplayItem
+                {
+                    RowName = rowName,
+                    DisplayName = info.DisplayName,
+                    Description = info.Description,
+                    Category = info.Category.ToString(),
+                    CompletedDate = dateDisplay,
+                    ProspectId = completed.ProspectID ?? "",
+                    SourceEntry = completed
+                });
+            }
+        }
+
+        CompletedAccoladeCount = CompletedAccoladeItems.Count;
+    }
+
+    /// <summary>
+    /// Parse "2023.01.03-06.27.38" → "Jan 3, 2023 6:27 AM"
+    /// </summary>
+    private static string FormatAccoladeDate(string? timestamp)
+    {
+        if (string.IsNullOrEmpty(timestamp)) return "";
+        try
+        {
+            // Format: "2023.01.03-06.27.38"
+            var parts = timestamp.Split('-');
+            if (parts.Length >= 2)
+            {
+                var dateParts = parts[0].Split('.');
+                var timeParts = parts[1].Split('.');
+                if (dateParts.Length == 3 && timeParts.Length >= 2)
+                {
+                    var dt = new DateTime(
+                        int.Parse(dateParts[0]), int.Parse(dateParts[1]), int.Parse(dateParts[2]),
+                        int.Parse(timeParts[0]), int.Parse(timeParts[1]),
+                        timeParts.Length > 2 ? int.Parse(timeParts[2]) : 0);
+                    return dt.ToString("MMM d, yyyy");
+                }
+            }
+        }
+        catch { /* fall through */ }
+        return timestamp;
     }
 
     private void LoadBestiaryData()
@@ -1834,6 +1901,26 @@ public class BackupEntry
     public string FullPath { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public int FileCount { get; set; }
+}
+
+/// <summary>
+/// Display model for completed accolades with resolved names, icons, and dates.
+/// Uses ObservableObject so icons can load asynchronously from GitHub.
+/// </summary>
+public partial class AccoladeDisplayItem : ObservableObject
+{
+    public string RowName { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string CompletedDate { get; set; } = "";
+    public string ProspectId { get; set; } = "";
+
+    [ObservableProperty]
+    private Avalonia.Media.Imaging.Bitmap? iconImage;
+
+    /// <summary>Reference to original for round-trip preservation.</summary>
+    public CompletedAccoladeEntry? SourceEntry { get; set; }
 }
 
 /// <summary>

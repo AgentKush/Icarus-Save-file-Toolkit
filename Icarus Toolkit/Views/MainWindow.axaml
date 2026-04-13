@@ -530,31 +530,50 @@
                 <TabItem Header="Accolades">
                     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
-                            <TextBlock Text="Accolades (Achievements)" FontSize="14" FontWeight="Bold" />
-                            <TextBlock Text="Achievement tracking and progression stats. Each entry has a RowName identifier and a point value."
-                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <TextBlock Text="Accolades (Achievements)" FontSize="14" FontWeight="Bold" />
+                                <TextBlock VerticalAlignment="Center" Foreground="#AAAAAA">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0} completed">
+                                            <Binding Path="CompletedAccoladeCount" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock Text="Achievements and milestones earned across your prospects. Icons load from GitHub."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" IsVisible="{Binding HasAccolades}" />
+                            <TextBlock Text="No Accolades.json found. Play some prospects to earn accolades."
+                                       Foreground="#FF9800"
+                                       IsVisible="{Binding HasAccolades, Converter={StaticResource InverseBooleanConverter}}" />
                         </StackPanel>
                         <DataGrid
                             Grid.Row="1"
-                            ItemsSource="{Binding AccoladeEntries}"
-                            SelectedIndex="{Binding SelectedAccoladeIndex}"
+                            ItemsSource="{Binding CompletedAccoladeItems}"
+                            SelectedIndex="{Binding SelectedCompletedAccoladeIndex}"
                             CanUserReorderColumns="False"
                             CanUserResizeColumns="True"
-                            IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                            IsReadOnly="True"
                             GridLinesVisibility="Horizontal"
                             BorderThickness="1"
                             BorderBrush="#444444">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Accolade (RowName)" Binding="{Binding RowName}" Width="*" />
-                                <DataGridTextColumn Header="Points" Binding="{Binding NumPoints}" Width="120" />
+                                <DataGridTextColumn Header="Accolade" Binding="{Binding DisplayName}" Width="200" />
+                                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+                                <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="110" />
+                                <DataGridTextColumn Header="Completed" Binding="{Binding CompletedDate}" Width="110" />
+                                <DataGridTextColumn Header="Prospect" Binding="{Binding ProspectId}" Width="120" />
+                                <DataGridTextColumn Header="RowName" Binding="{Binding RowName}" Width="180" />
                             </DataGrid.Columns>
                         </DataGrid>
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
-                                    Margin="0,8,0,0" IsVisible="{Binding EditMode}">
-                            <TextBox Watermark="Accolade RowName" Text="{Binding NewAccoladeRowName}" Width="250" />
-                            <NumericUpDown Value="{Binding NewAccoladePoints}" Minimum="0" Maximum="999999" Width="120" />
-                            <Button Command="{Binding AddAccoladeCommand}" Content="Add Accolade" />
-                            <Button Command="{Binding RemoveAccoladeCommand}" Content="Remove Selected" />
+                        <!-- Edit mode: in-progress accolades (raw data) -->
+                        <StackPanel Grid.Row="2" Spacing="4" Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                            <TextBlock Text="In-Progress Accolades (raw data):" Foreground="#AAAAAA" FontSize="11" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox Watermark="Accolade RowName" Text="{Binding NewAccoladeRowName}" Width="250" />
+                                <NumericUpDown Value="{Binding NewAccoladePoints}" Minimum="0" Maximum="999999" Width="120" />
+                                <Button Command="{Binding AddAccoladeCommand}" Content="Add Accolade" />
+                                <Button Command="{Binding RemoveAccoladeCommand}" Content="Remove Selected" />
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
                 </TabItem>
