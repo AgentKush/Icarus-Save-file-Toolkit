@@ -287,19 +287,16 @@
                             </StackPanel>
                             <TextBlock Text="Items crafted in the workshop available to take on drops. Loaded from MetaInventory.json."
                                        Foreground="#AAAAAA" IsVisible="{Binding HasMetaInventory}" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0"
+                                        IsVisible="{Binding IconCount}">
                                 <TextBlock VerticalAlignment="Center" Text="Icons:" FontSize="11" Foreground="#AAAAAA" />
-                                <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="#88CC88"
-                                           IsVisible="{Binding IconCount}">
+                                <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="#88CC88">
                                     <TextBlock.Text>
-                                        <MultiBinding StringFormat="{}{0} indexed">
+                                        <MultiBinding StringFormat="{}{0} available (loaded from GitHub)">
                                             <Binding Path="IconCount" />
                                         </MultiBinding>
                                     </TextBlock.Text>
                                 </TextBlock>
-                                <TextBlock VerticalAlignment="Center" Text="Not configured" FontSize="11" Foreground="#FF9800"
-                                           IsVisible="{Binding !IconCount}" />
-                                <Button Command="{Binding BrowseIconFolderCommand}" Content="Set Icon Folder" FontSize="11" Padding="8,2" />
                             </StackPanel>
                             <TextBlock Text="No MetaInventory.json found. Craft workshop items in-game first."
                                        Foreground="#FF9800" IsVisible="{Binding HasMetaInventory, Converter={StaticResource InverseBooleanConverter}}" />

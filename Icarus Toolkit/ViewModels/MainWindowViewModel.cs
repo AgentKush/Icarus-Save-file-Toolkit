@@ -59,49 +59,23 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? pathWarningText;
 
-    // Icon system
+    // Icon system — loads icons from GitHub on demand
     private readonly IconResolver _iconResolver = new();
-
-    [ObservableProperty]
-    private string? iconFolderPath;
 
     [ObservableProperty]
     private int iconCount;
 
     /// <summary>
-    /// When the icon folder path changes, rebuild the icon index and persist the setting.
-    /// </summary>
-    partial void OnIconFolderPathChanged(string? value)
-    {
-        if (!string.IsNullOrEmpty(value) && Directory.Exists(value))
-        {
-            _iconResolver.BuildIndex(value);
-            IconCount = _iconResolver.IndexedCount;
-            SettingsManager.SetSetting("IconFolderPath", value);
-            Log.Information("Icon folder set: {Path} ({Count} index entries)", value, IconCount);
-
-            // Re-apply icons to any already-loaded inventory items
-            foreach (var item in MetaInventoryItems)
-            {
-                item.IconImage = _iconResolver.GetIcon(item.RowName);
-            }
-        }
-        else
-        {
-            IconCount = 0;
-        }
-    }
-
-    /// <summary>
-    /// Initialize the icon resolver from saved settings on startup.
+    /// Initialize the icon resolver from the embedded manifest.
+    /// Called once on startup; icons are fetched from GitHub when needed.
     /// </summary>
     private void InitializeIcons()
     {
-        var savedIconPath = SettingsManager.GetSetting("IconFolderPath");
-        if (!string.IsNullOrEmpty(savedIconPath) && Directory.Exists(savedIconPath))
-        {
-            IconFolderPath = savedIconPath; // triggers OnIconFolderPathChanged
-        }
+        if (_iconResolver.IsInitialized) return;
+
+        _iconResolver.BuildIndexFromManifest();
+        IconCount = _iconResolver.IndexedCount;
+        Log.Information("Icon system ready: {Count} icons indexed from manifest", IconCount);
     }
 
     #endregion
@@ -453,9 +427,8 @@ public partial class MainWindowViewModel : ViewModelBase
         ValidGamePath = false;
         IsCharacterLoaded = false;
 
-        // Load icon folder from saved settings (idempotent — skips if already loaded)
-        if (IconFolderPath == null)
-            InitializeIcons();
+        // Initialize icon system from embedded manifest (idempotent)
+        InitializeIcons();
 
         // 1. Try saved path first
         var savedPath = SettingsManager.GetSetting("GameDataPath") ?? "";
@@ -512,16 +485,6 @@ public partial class MainWindowViewModel : ViewModelBase
         GamePath = selectedPath;
         SettingsManager.SetSetting("GameDataPath", GamePath);
         ReloadGameData();
-    }
-
-    [RelayCommand]
-    private async Task BrowseIconFolder()
-    {
-        var selectedPath = await GetFolderFromUser("Select your extracted Icarus icons folder");
-        if (selectedPath == null) return;
-
-        IconFolderPath = selectedPath; // triggers OnIconFolderPathChanged
-        ShowInfo($"Loaded {IconCount} icon entries from {Path.GetFileName(selectedPath)}");
     }
 
     [RelayCommand]
@@ -1432,7 +1395,6 @@ public partial class MainWindowViewModel : ViewModelBase
                         Count = item.EffectiveCount,
                         Durability = durStr,
                         Alterations = alterations,
-                        IconImage = _iconResolver.GetIcon(rowName),
                         SourceItem = item
                     });
                 }
@@ -1454,6 +1416,35 @@ public partial class MainWindowViewModel : ViewModelBase
                 MetaRow = metaRow,
                 DisplayText = $"[{category}] {displayName} ({metaRow})"
             });
+        }
+
+        // Fetch icons from GitHub in the background (non-blocking)
+        if (_iconResolver.IsInitialized)
+        {
+            _ = LoadIconsAsync();
+        }
+    }
+
+    /// <summary>
+    /// Download icons from GitHub for all inventory items in the background.
+    /// Updates each item's IconImage as downloads complete.
+    /// </summary>
+    private async Task LoadIconsAsync()
+    {
+        foreach (var item in MetaInventoryItems.ToList())
+        {
+            try
+            {
+                var icon = await _iconResolver.GetIconAsync(item.RowName);
+                if (icon != null)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() => item.IconImage = icon);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("Icon load failed for {RowName}: {Error}", item.RowName, ex.Message);
+            }
         }
     }
 

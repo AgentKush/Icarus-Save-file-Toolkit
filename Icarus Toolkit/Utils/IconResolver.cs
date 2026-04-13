@@ -1,97 +1,131 @@
+using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 using Serilog;
 
 namespace Icarus_Toolkit.Utils;
 
 /// <summary>
-/// Resolves item RowNames/MetaRows to icon Bitmaps by scanning an icons folder.
-/// Builds an index of all PNG files and matches items using multiple strategies.
+/// Resolves item RowNames/MetaRows to icon Bitmaps by fetching from GitHub.
+/// Loads an embedded manifest of available icons and downloads them on demand
+/// from the raw.githubusercontent.com CDN with in-memory session caching.
 /// </summary>
 public class IconResolver : IDisposable
 {
+    private const string GitHubRawBase =
+        "https://raw.githubusercontent.com/AgentKush/Icarus-Save-file-Toolkit/main/icarus_icons/";
+
+    private const string ManifestResourceName = "icon_manifest.txt";
+
+    /// <summary>Maps normalised lookup keys → relative icon paths (from manifest).</summary>
     private readonly Dictionary<string, string> _index = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Bitmap> _cache = new();
+
+    /// <summary>Maps relative icon path → downloaded Bitmap (session cache).</summary>
+    private readonly Dictionary<string, Bitmap?> _cache = new();
+
+    /// <summary>Track paths we already tried and failed so we don't retry.</summary>
+    private readonly HashSet<string> _failedPaths = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly object CacheLock = new();
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private bool _disposed;
 
-    public string? IconFolder { get; private set; }
     public int IndexedCount => _index.Count;
+    public bool IsInitialized => _index.Count > 0;
 
     /// <summary>
-    /// Scan an icons folder and build the lookup index.
-    /// Icons are named like "Category_ITEM_Meta_Axe_Shengong_Alpha.png"
-    /// or "Category_T_ITEM_Lithium_Axe.png".
+    /// Build the lookup index from the embedded icon_manifest.txt resource.
+    /// Each line is a relative path like "Tools/Tools_ITEM_Meta_Axe_Shengong_Alpha.png".
     /// </summary>
-    public void BuildIndex(string iconFolder)
+    public void BuildIndexFromManifest()
     {
         _index.Clear();
         ClearCache();
-        IconFolder = iconFolder;
 
-        if (string.IsNullOrEmpty(iconFolder) || !Directory.Exists(iconFolder))
+        try
         {
-            Log.Warning("Icon folder not found: {Folder}", iconFolder);
-            return;
-        }
-
-        // Recursively find all .png files
-        var pngFiles = Directory.GetFiles(iconFolder, "*.png", SearchOption.AllDirectories);
-
-        foreach (var file in pngFiles)
-        {
-            var stem = Path.GetFileNameWithoutExtension(file);
-
-            // Add full filename as key (e.g. "Tools_ITEM_Meta_Axe_Shengong_Alpha")
-            _index.TryAdd(stem, file);
-
-            // Extract the item name portion by stripping the category prefix
-            // e.g. "Tools_ITEM_Meta_Axe_Shengong_Alpha" -> "ITEM_Meta_Axe_Shengong_Alpha"
-            var underscoreIdx = stem.IndexOf('_');
-            if (underscoreIdx > 0 && underscoreIdx < stem.Length - 1)
+            var manifestLines = LoadEmbeddedManifest();
+            if (manifestLines == null || manifestLines.Length == 0)
             {
-                var afterCategory = stem[(underscoreIdx + 1)..];
-                _index.TryAdd(afterCategory, file);
+                Log.Warning("Icon manifest is empty or not found");
+                return;
+            }
 
-                // Also strip ITEM_ or T_ITEM_ prefix to get the pure name
-                // "ITEM_Meta_Axe_Shengong_Alpha" -> "Meta_Axe_Shengong_Alpha"
-                // "T_ITEM_Lithium_Axe" -> "Lithium_Axe"
-                if (afterCategory.StartsWith("ITEM_", StringComparison.OrdinalIgnoreCase))
+            foreach (var line in manifestLines)
+            {
+                var relativePath = line.Trim();
+                if (string.IsNullOrEmpty(relativePath)) continue;
+
+                var fileName = Path.GetFileNameWithoutExtension(relativePath);
+
+                // Key 1: Full filename (e.g. "Tools_ITEM_Meta_Axe_Shengong_Alpha")
+                _index.TryAdd(fileName, relativePath);
+
+                // Key 2: Strip category prefix (e.g. "ITEM_Meta_Axe_Shengong_Alpha")
+                var underscoreIdx = fileName.IndexOf('_');
+                if (underscoreIdx > 0 && underscoreIdx < fileName.Length - 1)
                 {
-                    var pureName = afterCategory[5..];
-                    _index.TryAdd(pureName, file);
-                }
-                else if (afterCategory.StartsWith("T_ITEM_", StringComparison.OrdinalIgnoreCase))
-                {
-                    var pureName = afterCategory[7..];
-                    _index.TryAdd(pureName, file);
-                    // Also add with ITEM_ prefix for cross-matching
-                    _index.TryAdd("ITEM_" + pureName, file);
+                    var afterCategory = fileName[(underscoreIdx + 1)..];
+                    _index.TryAdd(afterCategory, relativePath);
+
+                    // Key 3: Strip ITEM_ or T_ITEM_ prefix to get the pure name
+                    if (afterCategory.StartsWith("ITEM_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var pureName = afterCategory[5..];
+                        _index.TryAdd(pureName, relativePath);
+                    }
+                    else if (afterCategory.StartsWith("T_ITEM_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var pureName = afterCategory[7..];
+                        _index.TryAdd(pureName, relativePath);
+                        _index.TryAdd("ITEM_" + pureName, relativePath);
+                    }
                 }
             }
-        }
 
-        Log.Information("Icon index built: {Count} entries from {FileCount} files in {Folder}",
-            _index.Count, pngFiles.Length, iconFolder);
+            Log.Information("Icon index built from manifest: {Count} entries from {FileCount} icons",
+                _index.Count, manifestLines.Length);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to build icon index from manifest");
+        }
     }
 
     /// <summary>
-    /// Try to find an icon for the given RowName / MetaRow.
-    /// Tries multiple matching strategies in order of specificity.
+    /// Try to find and download an icon for the given RowName / MetaRow.
+    /// Returns a cached Bitmap if already downloaded this session, otherwise fetches from GitHub.
     /// </summary>
     public Bitmap? GetIcon(string? rowName)
     {
         if (string.IsNullOrEmpty(rowName) || _index.Count == 0)
             return null;
 
-        var path = ResolveIconPath(rowName);
-        if (path == null)
+        var relativePath = ResolveIconPath(rowName);
+        if (relativePath == null)
             return null;
 
-        return LoadBitmap(path);
+        return LoadBitmapFromGitHub(relativePath);
     }
 
     /// <summary>
-    /// Find the icon file path for a given RowName, or null if not found.
+    /// Async version — downloads the icon without blocking the UI thread.
+    /// Use this from async contexts for better responsiveness.
+    /// </summary>
+    public async Task<Bitmap?> GetIconAsync(string? rowName)
+    {
+        if (string.IsNullOrEmpty(rowName) || _index.Count == 0)
+            return null;
+
+        var relativePath = ResolveIconPath(rowName);
+        if (relativePath == null)
+            return null;
+
+        return await LoadBitmapFromGitHubAsync(relativePath);
+    }
+
+    /// <summary>
+    /// Find the relative icon path for a given RowName, or null if not in manifest.
     /// </summary>
     public string? ResolveIconPath(string rowName)
     {
@@ -99,7 +133,7 @@ public class IconResolver : IDisposable
         if (_index.TryGetValue(rowName, out var path))
             return path;
 
-        // Strategy 2: Try with "Meta_" prefix stripped (some items stored without it)
+        // Strategy 2: Try with "Meta_" prefix stripped
         if (rowName.StartsWith("Meta_", StringComparison.OrdinalIgnoreCase))
         {
             var stripped = rowName[5..];
@@ -118,7 +152,7 @@ public class IconResolver : IDisposable
                 return path;
         }
 
-        // Strategy 5: Fuzzy — search for any key that ends with the rowName
+        // Strategy 5: Fuzzy — search for any key ending with the rowName
         foreach (var kvp in _index)
         {
             if (kvp.Key.EndsWith("_" + rowName, StringComparison.OrdinalIgnoreCase) ||
@@ -129,43 +163,121 @@ public class IconResolver : IDisposable
         return null;
     }
 
-    private Bitmap? LoadBitmap(string path)
+    /// <summary>
+    /// Synchronous download — blocks the calling thread. Used during batch loading.
+    /// </summary>
+    private Bitmap? LoadBitmapFromGitHub(string relativePath)
     {
         lock (CacheLock)
         {
-            if (_cache.TryGetValue(path, out var cached))
+            if (_cache.TryGetValue(relativePath, out var cached))
                 return cached;
+            if (_failedPaths.Contains(relativePath))
+                return null;
         }
 
         try
         {
-            if (!File.Exists(path))
-                return null;
+            var url = GitHubRawBase + relativePath.Replace('\\', '/');
+            var data = Http.GetByteArrayAsync(url).GetAwaiter().GetResult();
 
-            var bitmap = new Bitmap(path);
+            using var ms = new MemoryStream(data);
+            var bitmap = new Bitmap(ms);
 
             lock (CacheLock)
             {
-                _cache.TryAdd(path, bitmap);
+                _cache.TryAdd(relativePath, bitmap);
             }
 
             return bitmap;
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load icon: {Path} — {Error}", path, ex.Message);
+            Log.Debug("Failed to download icon: {Path} — {Error}", relativePath, ex.Message);
+            lock (CacheLock)
+            {
+                _failedPaths.Add(relativePath);
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Async download — non-blocking. Preferred for UI contexts.
+    /// </summary>
+    private async Task<Bitmap?> LoadBitmapFromGitHubAsync(string relativePath)
+    {
+        lock (CacheLock)
+        {
+            if (_cache.TryGetValue(relativePath, out var cached))
+                return cached;
+            if (_failedPaths.Contains(relativePath))
+                return null;
+        }
+
+        try
+        {
+            var url = GitHubRawBase + relativePath.Replace('\\', '/');
+            var data = await Http.GetByteArrayAsync(url);
+
+            using var ms = new MemoryStream(data);
+            var bitmap = new Bitmap(ms);
+
+            lock (CacheLock)
+            {
+                _cache.TryAdd(relativePath, bitmap);
+            }
+
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("Failed to download icon: {Path} — {Error}", relativePath, ex.Message);
+            lock (CacheLock)
+            {
+                _failedPaths.Add(relativePath);
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Load the icon_manifest.txt embedded resource from the Assets folder.
+    /// Uses the calling assembly to resolve the avares:// URI correctly regardless of spaces in the name.
+    /// </summary>
+    private static string[]? LoadEmbeddedManifest()
+    {
+        try
+        {
+            // Resolve assembly name at runtime to handle spaces correctly
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var assemblyName = assembly.GetName().Name ?? "Icarus Toolkit";
+            var uri = new Uri($"avares://{assemblyName}/Assets/{ManifestResourceName}");
+            using var stream = AssetLoader.Open(uri);
+            using var reader = new StreamReader(stream);
+            var content = reader.ReadToEnd();
+            return content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("Could not load embedded icon manifest: {Error}", ex.Message);
             return null;
         }
     }
 
     public void ClearCache()
     {
+        List<Bitmap?> toDispose;
         lock (CacheLock)
         {
-            foreach (var bmp in _cache.Values)
-                bmp.Dispose();
+            toDispose = new List<Bitmap?>(_cache.Values);
             _cache.Clear();
+            _failedPaths.Clear();
         }
+
+        // Dispose outside lock to avoid holding it during potentially slow Dispose calls
+        foreach (var bmp in toDispose)
+            bmp?.Dispose();
     }
 
     public void Dispose()
