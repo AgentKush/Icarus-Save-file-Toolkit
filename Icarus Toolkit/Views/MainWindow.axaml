@@ -272,13 +272,25 @@
                 </TabItem>
 
                 <!-- ===== WORKSHOP ITEMS (META INVENTORY) TAB ===== -->
-                <TabItem Header="Workshop Items" IsVisible="{Binding HasMetaInventory}">
-                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                <TabItem Header="Workshop Items">
+                    <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
-                            <TextBlock Text="Orbital Workshop Inventory" FontSize="14" FontWeight="Bold" />
-                            <TextBlock Text="Items crafted in the workshop that are available to take on drops. Loaded from MetaInventory.json."
-                                       Foreground="#AAAAAA" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <TextBlock Text="Orbital Workshop Inventory" FontSize="14" FontWeight="Bold" />
+                                <TextBlock VerticalAlignment="Center" Foreground="#AAAAAA">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0} item(s)">
+                                            <Binding Path="InventoryItemCount" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock Text="Items crafted in the workshop available to take on drops. Loaded from MetaInventory.json."
+                                       Foreground="#AAAAAA" IsVisible="{Binding HasMetaInventory}" />
+                            <TextBlock Text="No MetaInventory.json found. Craft workshop items in-game first."
+                                       Foreground="#FF9800" IsVisible="{Binding HasMetaInventory, Converter={StaticResource InverseBooleanConverter}}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0"
+                                        IsVisible="{Binding HasMetaInventory}">
                                 <TextBlock VerticalAlignment="Center" Text="Inventory ID:" />
                                 <TextBlock VerticalAlignment="Center" Text="{Binding MetaInventoryId}" Foreground="#CCCCCC" />
                             </StackPanel>
@@ -294,16 +306,101 @@
                             BorderThickness="1"
                             BorderBrush="#444444">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Item (MetaRow)" Binding="{Binding MetaRow}" Width="*" />
-                                <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="100" />
+                                <DataGridTextColumn Header="Item Name" Binding="{Binding DisplayName}" Width="200" />
+                                <DataGridTextColumn Header="Row Name" Binding="{Binding RowName}" Width="*" />
+                                <DataGridTextColumn Header="Table" Binding="{Binding DataTable}" Width="120" />
+                                <DataGridTextColumn Header="Qty" Binding="{Binding Count}" Width="50" />
+                                <DataGridTextColumn Header="Durability" Binding="{Binding Durability}" Width="100" />
+                                <DataGridTextColumn Header="Alterations" Binding="{Binding Alterations}" Width="200" />
                             </DataGrid.Columns>
                         </DataGrid>
+                        <!-- Item Picker -->
+                        <StackPanel Grid.Row="2" Spacing="4" Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                            <TextBlock Text="Add from known items:" Foreground="#AAAAAA" FontSize="11" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ComboBox ItemsSource="{Binding WorkshopItemPickerList}"
+                                          SelectedItem="{Binding SelectedItemPicker}"
+                                          MinWidth="400" MaxDropDownHeight="350"
+                                          PlaceholderText="Browse known workshop items..." />
+                                <NumericUpDown Value="{Binding NewInventoryItemCount}" Minimum="1" Maximum="999" Width="100" />
+                                <Button Command="{Binding AddInventoryItemCommand}" Content="Add Item" />
+                                <Button Command="{Binding RemoveInventoryItemCommand}" Content="Remove Selected" />
+                            </StackPanel>
+                        </StackPanel>
+                        <!-- Manual entry -->
+                        <StackPanel Grid.Row="3" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding EditMode}">
+                            <TextBlock Text="Or enter a MetaRow name manually:" Foreground="#AAAAAA" FontSize="11" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox Watermark="Item MetaRow (e.g. Pickaxe_Titanium)" Text="{Binding NewInventoryItemName}" Width="350" />
+                                <Button Command="{Binding AddInventoryItemCommand}" Content="Add Manual" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+
+                <!-- ===== PETS / MOUNTS TAB ===== -->
+                <TabItem Header="Pets &amp; Mounts">
+                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <TextBlock Text="Pets &amp; Mounts" FontSize="14" FontWeight="Bold" />
+                                <TextBlock VerticalAlignment="Center" Foreground="#AAAAAA">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0} creature(s) loaded from Mounts.json">
+                                            <Binding Path="MountCount" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock Text="Tamed creatures, mounts, combat pets, and farm animals. Name and level are editable. Binary data (genetics, talents, lineage) is preserved during saves."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap"
+                                       IsVisible="{Binding HasMounts}" />
+                            <TextBlock Text="No Mounts.json found in your save folder. Tame a creature in-game first, then reload to see your pets here."
+                                       Foreground="#FF9800" TextWrapping="Wrap"
+                                       IsVisible="{Binding HasMounts, Converter={StaticResource InverseBooleanConverter}}" />
+                        </StackPanel>
+                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,280">
+                            <!-- Mount List -->
+                            <DataGrid
+                                Grid.Column="0"
+                                ItemsSource="{Binding MountDisplayItems}"
+                                SelectedIndex="{Binding SelectedMountIndex}"
+                                CanUserReorderColumns="False"
+                                CanUserResizeColumns="True"
+                                IsReadOnly="True"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#444444">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                                    <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="60" />
+                                    <DataGridTextColumn Header="Species" Binding="{Binding TypeDisplay}" Width="130" />
+                                    <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100" />
+                                    <DataGridTextColumn Header="Data (bytes)" Binding="{Binding BlobSize}" Width="90" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Separator -->
+                            <Border Grid.Column="1" Width="1" Background="#444444" Margin="8,0" />
+
+                            <!-- Detail Panel -->
+                            <StackPanel Grid.Column="2" Spacing="8" IsVisible="{Binding EditMode}">
+                                <TextBlock Text="Edit Selected Mount" FontWeight="SemiBold" />
+                                <TextBlock Text="Name:" Foreground="#AAAAAA" Margin="0" />
+                                <TextBox Text="{Binding EditedMountName}" Watermark="Mount name" />
+                                <TextBlock Text="Level:" Foreground="#AAAAAA" Margin="0" />
+                                <NumericUpDown Value="{Binding EditedMountLevel}" Minimum="1" Maximum="50" />
+                                <TextBlock Text="Type (internal):" Foreground="#AAAAAA" Margin="0" />
+                                <TextBox Text="{Binding EditedMountType}" Watermark="e.g. Buffalo, Wolf" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                    <Button Command="{Binding SelectMountCommand}" Content="Load" />
+                                    <Button Command="{Binding ApplyMountEditsCommand}" Content="Apply Changes" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
                         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
                                     Margin="0,8,0,0" IsVisible="{Binding EditMode}">
-                            <TextBox Watermark="Item MetaRow name" Text="{Binding NewInventoryItemName}" Width="250" />
-                            <NumericUpDown Value="{Binding NewInventoryItemCount}" Minimum="1" Maximum="999" Width="100" />
-                            <Button Command="{Binding AddInventoryItemCommand}" Content="Add Item" />
-                            <Button Command="{Binding RemoveInventoryItemCommand}" Content="Remove Selected" />
+                            <Button Command="{Binding RemoveMountCommand}" Content="Remove Selected Mount" />
                         </StackPanel>
                     </Grid>
                 </TabItem>
@@ -411,7 +508,7 @@
                 </TabItem>
 
                 <!-- ===== ACCOLADES TAB ===== -->
-                <TabItem Header="Accolades" IsVisible="{Binding HasAccolades}">
+                <TabItem Header="Accolades">
                     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
                             <TextBlock Text="Accolades (Achievements)" FontSize="14" FontWeight="Bold" />
@@ -444,7 +541,7 @@
                 </TabItem>
 
                 <!-- ===== BESTIARY TAB ===== -->
-                <TabItem Header="Bestiary" IsVisible="{Binding HasBestiary}">
+                <TabItem Header="Bestiary">
                     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
                             <TextBlock Text="Bestiary (Creature Discoveries)" FontSize="14" FontWeight="Bold" />
@@ -477,27 +574,73 @@
                 </TabItem>
 
                 <!-- ===== LOADOUTS TAB ===== -->
-                <TabItem Header="Loadouts" IsVisible="{Binding HasLoadouts}">
+                <TabItem Header="Loadouts">
                     <Grid RowDefinitions="Auto,*,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
                             <TextBlock Text="Equipment Loadout Presets" FontSize="14" FontWeight="Bold" />
                             <TextBlock Text="Saved loadout presets for quickly equipping items from the orbital workshop before a drop."
                                        Foreground="#AAAAAA" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding LoadoutCount, StringFormat='Total Loadouts: {0}'}"
+                                       Foreground="#88CCFF" FontSize="12" />
                         </StackPanel>
-                        <DataGrid
-                            Grid.Row="1"
-                            ItemsSource="{Binding LoadoutEntries}"
-                            SelectedIndex="{Binding SelectedLoadoutIndex}"
-                            CanUserReorderColumns="False"
-                            CanUserResizeColumns="True"
-                            IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
-                            GridLinesVisibility="Horizontal"
-                            BorderThickness="1"
-                            BorderBrush="#444444">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Loadout Name" Binding="{Binding LoadoutName}" Width="*" />
-                            </DataGrid.Columns>
-                        </DataGrid>
+
+                        <!-- Main content: loadout list + slot viewer side by side -->
+                        <Grid Grid.Row="1" ColumnDefinitions="*,8,*">
+                            <!-- Left: Loadout list -->
+                            <Grid Grid.Column="0" RowDefinitions="Auto,*">
+                                <TextBlock Grid.Row="0" Text="Loadouts" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                <DataGrid
+                                    Grid.Row="1"
+                                    ItemsSource="{Binding LoadoutDisplayItems}"
+                                    SelectedIndex="{Binding SelectedLoadoutIndex}"
+                                    CanUserReorderColumns="False"
+                                    CanUserResizeColumns="True"
+                                    IsReadOnly="True"
+                                    GridLinesVisibility="Horizontal"
+                                    BorderThickness="1"
+                                    BorderBrush="#444444">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                                        <DataGridTextColumn Header="Items" Binding="{Binding SlotCount}" Width="60" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+
+                            <!-- Right: Slot viewer for selected loadout -->
+                            <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto">
+                                <TextBlock Grid.Row="0" FontWeight="SemiBold" Margin="0,0,0,4"
+                                           Text="{Binding SelectedLoadout.Name, StringFormat='Slots — {0}', FallbackValue='Select a loadout to view slots'}" />
+                                <DataGrid
+                                    Grid.Row="1"
+                                    ItemsSource="{Binding SelectedLoadoutSlots}"
+                                    SelectedIndex="{Binding SelectedSlotIndex}"
+                                    CanUserReorderColumns="False"
+                                    CanUserResizeColumns="True"
+                                    IsReadOnly="True"
+                                    GridLinesVisibility="Horizontal"
+                                    BorderThickness="1"
+                                    BorderBrush="#444444">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="#" Binding="{Binding SlotIndex}" Width="40" />
+                                        <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="*" />
+                                        <DataGridTextColumn Header="MetaRow" Binding="{Binding MetaRow}" Width="*" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <!-- Slot edit controls -->
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                                            Margin="0,4,0,0" IsVisible="{Binding EditMode}">
+                                    <ComboBox ItemsSource="{Binding WorkshopItemPickerList}"
+                                              SelectedItem="{Binding SelectedSlotItemPicker}"
+                                              PlaceholderText="Pick an item..."
+                                              Width="200" />
+                                    <Button Command="{Binding AddLoadoutSlotCommand}" Content="Add Slot" />
+                                    <Button Command="{Binding RemoveLoadoutSlotCommand}" Content="Remove Slot" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+
+                        <!-- Bottom: loadout management controls -->
                         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
                                     Margin="0,8,0,0" IsVisible="{Binding EditMode}">
                             <TextBox Watermark="Loadout Name" Text="{Binding NewLoadoutName}" Width="250" />

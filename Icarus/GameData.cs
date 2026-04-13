@@ -11,6 +11,7 @@ public class GameData
     private readonly string _accoladesPath;
     private readonly string _bestiaryPath;
     private readonly string _loadoutsPath;
+    private readonly string _mountsPath;
     private readonly string _backupPath;
 
     internal const string CharactersFileName = "Characters.json";
@@ -19,6 +20,7 @@ public class GameData
     internal const string AccoladesFileName = "Accolades.json";
     internal const string BestiaryFileName = "BestiaryData.json";
     internal const string LoadoutsFileName = "Loadouts.json";
+    internal const string MountsFileName = "Mounts.json";
     internal const string BackupFolder = "backups";
 
     public bool ValidGamePath { get; private set; }
@@ -30,12 +32,14 @@ public class GameData
     internal string AccoladesPath => _accoladesPath;
     internal string BestiaryPath => _bestiaryPath;
     internal string LoadoutsPath => _loadoutsPath;
+    internal string MountsPath => _mountsPath;
     internal string BackupPath => _backupPath;
 
     public bool HasMetaInventory => File.Exists(_metaInventoryPath);
     public bool HasAccolades => File.Exists(_accoladesPath);
     public bool HasBestiary => File.Exists(_bestiaryPath);
     public bool HasLoadouts => File.Exists(_loadoutsPath);
+    public bool HasMounts => File.Exists(_mountsPath);
 
     public GameData(string gameDataPath)
     {
@@ -46,6 +50,7 @@ public class GameData
         _accoladesPath = Path.Combine(gameDataPath, AccoladesFileName);
         _bestiaryPath = Path.Combine(gameDataPath, BestiaryFileName);
         _loadoutsPath = Path.Combine(gameDataPath, LoadoutsFileName);
+        _mountsPath = Path.Combine(gameDataPath, MountsFileName);
         _backupPath = Path.Combine(Directory.GetCurrentDirectory(), BackupFolder);
 
         if (!ValidateGamePath(gameDataPath))
@@ -63,6 +68,7 @@ public class GameData
         Log.Information("Accolades file set to {AccoladesPath} (exists: {Exists})", _accoladesPath, HasAccolades);
         Log.Information("Bestiary file set to {BestiaryPath} (exists: {Exists})", _bestiaryPath, HasBestiary);
         Log.Information("Loadouts file set to {LoadoutsPath} (exists: {Exists})", _loadoutsPath, HasLoadouts);
+        Log.Information("Mounts file set to {MountsPath} (exists: {Exists})", _mountsPath, HasMounts);
         Log.Information("Backup folder set to {BackupPath}", _backupPath);
     }
 
@@ -77,6 +83,8 @@ public class GameData
     public BestiaryExplorer GetBestiary() => new(_bestiaryPath);
 
     public LoadoutsExplorer GetLoadouts() => new(_loadoutsPath);
+
+    public MountsExplorer GetMounts() => new(_mountsPath);
 
     public static bool ValidateGamePath(string gamePath)
     {

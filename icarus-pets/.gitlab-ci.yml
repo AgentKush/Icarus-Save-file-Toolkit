@@ -1,0 +1,19 @@
+stages:
+  - test
+
+variables:
+  PYTHONIOENCODING: "utf-8"
+
+test:talent_data:
+  stage: test
+  tags:
+    - shell
+  before_script:
+    - python3 -m venv .venv-ci
+    - source .venv-ci/bin/activate
+  script:
+    - pip install -e .
+    - python tests/test_talent_data.py
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"

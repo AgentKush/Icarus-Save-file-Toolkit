@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Game data files (user-specific save data)
+Mounts.json
+Mounts_edited.json
+*.bin
+*.bak
+
+# Generated output (regenerate with extraction pipeline)
+pak_talents_extracted.json
+pak_variations_extracted.json
+
+# Extracted pak files
+pak-files/
+
+# Wiki (separate git repo)
+wiki/
+
+# Secrets
+.gitlab_token
+docs/CLINE_NOTES.md
+config.toml
+.runner_system_id
+
+# IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+nul
+
+# Debug_artifacts
+debug_artifacts/
+.bug_report_token
+.bug_report_token
+.claude/settings.json
+.claude/settings.local.json

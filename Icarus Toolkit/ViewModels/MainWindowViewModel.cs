@@ -298,7 +298,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool hasMetaInventory;
 
     [ObservableProperty]
-    private ObservableCollection<InventoryItem> metaInventoryItems = [];
+    private ObservableCollection<InventoryDisplayItem> metaInventoryItems = [];
 
     [ObservableProperty]
     private int selectedInventoryItemIndex = -1;
@@ -312,6 +312,46 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? metaInventoryId;
 
+    [ObservableProperty]
+    private WorkshopItemPickerItem? selectedItemPicker;
+
+    [ObservableProperty]
+    private ObservableCollection<WorkshopItemPickerItem> workshopItemPickerList = [];
+
+    [ObservableProperty]
+    private int inventoryItemCount;
+
+    #endregion
+
+    #region Mounts (Pets)
+
+    private MountsExplorer? mountsExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasMounts;
+
+    [ObservableProperty]
+    private ObservableCollection<MountDisplayItem> mountDisplayItems = [];
+
+    [ObservableProperty]
+    private int selectedMountIndex = -1;
+
+    [ObservableProperty]
+    private MountDisplayItem? selectedMount;
+
+    // Editable fields for selected mount
+    [ObservableProperty]
+    private string? editedMountName;
+
+    [ObservableProperty]
+    private int editedMountLevel;
+
+    [ObservableProperty]
+    private string? editedMountType;
+
+    [ObservableProperty]
+    private int mountCount;
+
     #endregion
 
     #region Loadouts
@@ -322,13 +362,28 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool hasLoadouts;
 
     [ObservableProperty]
-    private ObservableCollection<LoadoutEntry> loadoutEntries = [];
+    private ObservableCollection<LoadoutDisplayItem> loadoutDisplayItems = [];
 
     [ObservableProperty]
     private int selectedLoadoutIndex = -1;
 
     [ObservableProperty]
     private string? newLoadoutName;
+
+    [ObservableProperty]
+    private LoadoutDisplayItem? selectedLoadout;
+
+    [ObservableProperty]
+    private ObservableCollection<LoadoutSlotDisplay> selectedLoadoutSlots = [];
+
+    [ObservableProperty]
+    private int selectedSlotIndex = -1;
+
+    [ObservableProperty]
+    private WorkshopItemPickerItem? selectedSlotItemPicker;
+
+    [ObservableProperty]
+    private int loadoutCount;
 
     #endregion
 
@@ -490,6 +545,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Load loadouts
         LoadLoadoutsData();
+
+        // Load mounts/pets
+        LoadMountsData();
 
         currentLoadedCharacterIndex = SelectedCharacterIndex;
         LoadText = "Load Character Data";
@@ -661,6 +719,19 @@ public partial class MainWindowViewModel : ViewModelBase
                 IsWarningIconVisible = true;
             }
         }
+        Progress = 73;
+
+        // Export mounts if available
+        if (mountsExplorerHandle?.MountsData != null && HasMounts)
+        {
+            SetMountsValues();
+            bool mountSuccess = mountsExplorerHandle.ExportMounts(mountsExplorerHandle.MountsData);
+            if (!mountSuccess)
+            {
+                ShowInfo("Mounts failed to export");
+                IsWarningIconVisible = true;
+            }
+        }
         Progress = 75;
 
         // Reload to verify
@@ -769,14 +840,45 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void AddInventoryItem()
     {
-        if (string.IsNullOrWhiteSpace(NewInventoryItemName)) return;
-        MetaInventoryItems.Add(new InventoryItem
+        // Prefer picker selection, fall back to manual text entry
+        var metaRow = SelectedItemPicker?.MetaRow ?? NewInventoryItemName;
+        if (string.IsNullOrWhiteSpace(metaRow)) return;
+
+        // Check if item already exists (simple workshop items only) — if so, add to count
+        var existing = MetaInventoryItems.FirstOrDefault(i =>
+            string.Equals(i.RowName, metaRow, StringComparison.OrdinalIgnoreCase) &&
+            i.SourceItem?.ItemStaticData == null); // Only stack simple items
+        if (existing != null)
         {
-            MetaRow = NewInventoryItemName,
-            Count = NewInventoryItemCount
-        });
+            existing.Count += NewInventoryItemCount;
+            if (existing.SourceItem != null)
+                existing.SourceItem.Count = existing.Count;
+            // Refresh display
+            var idx = MetaInventoryItems.IndexOf(existing);
+            MetaInventoryItems[idx] = existing;
+        }
+        else
+        {
+            var newItem = new InventoryItem
+            {
+                MetaRow = metaRow,
+                Count = NewInventoryItemCount
+            };
+
+            MetaInventoryItems.Add(new InventoryDisplayItem
+            {
+                RowName = metaRow,
+                DataTable = "D_WorkshopItems",
+                Count = NewInventoryItemCount,
+                DisplayName = WorkshopItemData.GetDisplayName(metaRow),
+                SourceItem = newItem
+            });
+        }
+
         NewInventoryItemName = "";
         NewInventoryItemCount = 1;
+        SelectedItemPicker = null;
+        InventoryItemCount = MetaInventoryItems.Count;
     }
 
     [RelayCommand]
@@ -785,6 +887,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedInventoryItemIndex >= 0 && SelectedInventoryItemIndex < MetaInventoryItems.Count)
         {
             MetaInventoryItems.RemoveAt(SelectedInventoryItemIndex);
+            InventoryItemCount = MetaInventoryItems.Count;
         }
     }
 
@@ -908,24 +1011,137 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void SelectMount()
+    {
+        if (SelectedMountIndex < 0 || SelectedMountIndex >= MountDisplayItems.Count) return;
+
+        SelectedMount = MountDisplayItems[SelectedMountIndex];
+        EditedMountName = SelectedMount.Name;
+        EditedMountLevel = SelectedMount.Level;
+        EditedMountType = SelectedMount.TypeRaw;
+    }
+
+    [RelayCommand]
+    private void ApplyMountEdits()
+    {
+        if (SelectedMount == null || SelectedMountIndex < 0) return;
+
+        SelectedMount.Name = EditedMountName ?? "";
+        SelectedMount.Level = EditedMountLevel;
+        SelectedMount.TypeRaw = EditedMountType ?? "";
+        SelectedMount.TypeDisplay = CreatureData.GetDisplayName(EditedMountType);
+        SelectedMount.Category = CreatureData.GetCategoryLabel(EditedMountType);
+
+        // Refresh the collection to update the DataGrid
+        var idx = SelectedMountIndex;
+        MountDisplayItems[idx] = SelectedMount;
+        SelectedMountIndex = idx;
+
+        ShowInfo($"Updated mount: {SelectedMount.Name}");
+    }
+
+    [RelayCommand]
+    private void RemoveMount()
+    {
+        if (SelectedMountIndex >= 0 && SelectedMountIndex < MountDisplayItems.Count)
+        {
+            var name = MountDisplayItems[SelectedMountIndex].Name;
+            MountDisplayItems.RemoveAt(SelectedMountIndex);
+            MountCount = MountDisplayItems.Count;
+            ShowInfo($"Removed mount: {name}");
+        }
+    }
+
+    [RelayCommand]
     private void AddLoadout()
     {
-        var name = string.IsNullOrWhiteSpace(NewLoadoutName) ? $"Loadout {LoadoutEntries.Count + 1}" : NewLoadoutName;
-        LoadoutEntries.Add(new LoadoutEntry
+        var name = string.IsNullOrWhiteSpace(NewLoadoutName) ? $"Loadout {LoadoutDisplayItems.Count + 1}" : NewLoadoutName;
+        LoadoutDisplayItems.Add(new LoadoutDisplayItem
         {
-            LoadoutName = name,
-            Slots = []
+            Name = name,
+            SlotCount = 0,
+            SourceEntry = new LoadoutEntry { LoadoutName = name, Slots = [] }
         });
         NewLoadoutName = "";
+        LoadoutCount = LoadoutDisplayItems.Count;
     }
 
     [RelayCommand]
     private void RemoveLoadout()
     {
-        if (SelectedLoadoutIndex >= 0 && SelectedLoadoutIndex < LoadoutEntries.Count)
+        if (SelectedLoadoutIndex >= 0 && SelectedLoadoutIndex < LoadoutDisplayItems.Count)
         {
-            LoadoutEntries.RemoveAt(SelectedLoadoutIndex);
+            LoadoutDisplayItems.RemoveAt(SelectedLoadoutIndex);
+            SelectedLoadoutSlots.Clear();
+            SelectedSlotIndex = -1;
+            SelectedLoadout = null;
+            LoadoutCount = LoadoutDisplayItems.Count;
         }
+    }
+
+    partial void OnSelectedLoadoutIndexChanged(int value) => SelectLoadout();
+
+    [RelayCommand]
+    private void SelectLoadout()
+    {
+        if (SelectedLoadoutIndex < 0 || SelectedLoadoutIndex >= LoadoutDisplayItems.Count) return;
+
+        SelectedLoadout = LoadoutDisplayItems[SelectedLoadoutIndex];
+        SelectedLoadoutSlots.Clear();
+
+        if (SelectedLoadout.SourceEntry?.Slots != null)
+        {
+            foreach (var slot in SelectedLoadout.SourceEntry.Slots)
+            {
+                SelectedLoadoutSlots.Add(new LoadoutSlotDisplay
+                {
+                    SlotIndex = slot.SlotIndex,
+                    MetaRow = slot.MetaRow ?? "",
+                    DisplayName = WorkshopItemData.GetDisplayName(slot.MetaRow),
+                    SourceSlot = slot
+                });
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void AddLoadoutSlot()
+    {
+        if (SelectedLoadout?.SourceEntry == null) return;
+
+        var metaRow = SelectedSlotItemPicker?.MetaRow ?? "";
+        if (string.IsNullOrWhiteSpace(metaRow)) return;
+
+        var slotIndex = SelectedLoadoutSlots.Count;
+        var newSlot = new LoadoutSlot { MetaRow = metaRow, SlotIndex = slotIndex };
+        SelectedLoadout.SourceEntry.Slots ??= [];
+        SelectedLoadout.SourceEntry.Slots.Add(newSlot);
+
+        SelectedLoadoutSlots.Add(new LoadoutSlotDisplay
+        {
+            SlotIndex = slotIndex,
+            MetaRow = metaRow,
+            DisplayName = WorkshopItemData.GetDisplayName(metaRow),
+            SourceSlot = newSlot
+        });
+
+        SelectedLoadout.SlotCount = SelectedLoadoutSlots.Count;
+        SelectedSlotItemPicker = null;
+    }
+
+    [RelayCommand]
+    private void RemoveLoadoutSlot()
+    {
+        if (SelectedSlotIndex < 0 || SelectedSlotIndex >= SelectedLoadoutSlots.Count) return;
+        if (SelectedLoadout?.SourceEntry?.Slots == null) return;
+
+        var slot = SelectedLoadoutSlots[SelectedSlotIndex];
+        if (slot.SourceSlot != null)
+            SelectedLoadout.SourceEntry.Slots.Remove(slot.SourceSlot);
+
+        SelectedLoadoutSlots.RemoveAt(SelectedSlotIndex);
+        SelectedSlotIndex = -1;
+        SelectedLoadout.SlotCount = SelectedLoadoutSlots.Count;
     }
 
     [RelayCommand]
@@ -1045,6 +1261,10 @@ public partial class MainWindowViewModel : ViewModelBase
             loadoutsExplorerHandle = gameData.GetLoadouts();
             HasLoadouts = gameData.HasLoadouts;
 
+            // Load mounts/pets if available
+            mountsExplorerHandle = gameData.GetMounts();
+            HasMounts = gameData.HasMounts;
+
             SelectedCharacterIndex = 0;
             ValidGamePath = true;
             ShowInfo("Game data loaded");
@@ -1117,13 +1337,82 @@ public partial class MainWindowViewModel : ViewModelBase
             if (metaInventoryExplorerHandle.Inventory.Items != null)
             {
                 foreach (var item in metaInventoryExplorerHandle.Inventory.Items)
-                    MetaInventoryItems.Add(item);
+                {
+                    var rowName = item.DisplayRowName;
+                    var dataTable = !string.IsNullOrEmpty(item.MetaRow)
+                        ? "D_WorkshopItems"
+                        : item.ItemStaticData?.DataTableName ?? "";
+
+                    // Resolve display name: try WorkshopItemData first, then clean up the RowName
+                    var displayName = !string.IsNullOrEmpty(item.MetaRow)
+                        ? WorkshopItemData.GetDisplayName(item.MetaRow)
+                        : CleanRowName(item.ItemStaticData?.RowName);
+
+                    // Format durability as percentage (max is typically 12,700,000 for legendary)
+                    var durStr = "";
+                    if (item.Durability >= 0)
+                    {
+                        durStr = $"{item.Durability:N0}";
+                    }
+
+                    // Collect alteration names
+                    var alterations = "";
+                    if (item.CustomProperties?.Alterations is { Count: > 0 })
+                    {
+                        alterations = string.Join(", ",
+                            item.CustomProperties.Alterations
+                                .Where(a => !string.IsNullOrEmpty(a.Value))
+                                .Select(a => a.Value));
+                    }
+
+                    MetaInventoryItems.Add(new InventoryDisplayItem
+                    {
+                        DisplayName = displayName,
+                        RowName = rowName,
+                        DataTable = dataTable,
+                        Count = item.EffectiveCount,
+                        Durability = durStr,
+                        Alterations = alterations,
+                        SourceItem = item
+                    });
+                }
             }
         }
         else
         {
             MetaInventoryId = null;
         }
+
+        InventoryItemCount = MetaInventoryItems.Count;
+
+        // Populate item picker
+        WorkshopItemPickerList.Clear();
+        foreach (var (metaRow, displayName, category) in WorkshopItemData.KnownItems)
+        {
+            WorkshopItemPickerList.Add(new WorkshopItemPickerItem
+            {
+                MetaRow = metaRow,
+                DisplayText = $"[{category}] {displayName} ({metaRow})"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Cleans up a D_ItemsStatic RowName into a readable display name.
+    /// e.g. "LegendaryWeapon_Sandworm_Crossbow" -> "Legendary Sandworm Crossbow"
+    /// </summary>
+    private static string CleanRowName(string? rowName)
+    {
+        if (string.IsNullOrEmpty(rowName)) return "Unknown";
+
+        var name = rowName
+            .Replace("LegendaryWeapon_", "Legendary ")
+            .Replace("Dev_", "[Dev] ")
+            .Replace("Test_", "[Test] ")
+            .Replace("Proxy_", "")
+            .Replace('_', ' ');
+
+        return name;
     }
 
     private void RefreshBackupList()
@@ -1194,9 +1483,29 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (metaInventoryExplorerHandle?.Inventory == null) return;
 
-        metaInventoryExplorerHandle.Inventory.Items = [.. MetaInventoryItems];
+        // Round-trip: use SourceItem references to preserve full item data.
+        // Only update fields that the user can edit (count for simple items).
+        var items = new List<InventoryItem>();
+        foreach (var displayItem in MetaInventoryItems)
+        {
+            if (displayItem.SourceItem != null)
+            {
+                // Preserve the original item — it has all the complex data
+                items.Add(displayItem.SourceItem);
+            }
+            else
+            {
+                // New item added via picker — create a simple workshop-style item
+                items.Add(new InventoryItem
+                {
+                    MetaRow = displayItem.RowName,
+                    Count = displayItem.Count
+                });
+            }
+        }
 
-        Log.Information("Set meta inventory values ({ItemCount} items)", MetaInventoryItems.Count);
+        metaInventoryExplorerHandle.Inventory.Items = items;
+        Log.Information("Set meta inventory values ({ItemCount} items)", items.Count);
     }
 
     private void LoadCosmetics(CosmeticData? cosmetic)
@@ -1324,20 +1633,88 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void LoadLoadoutsData()
     {
-        LoadoutEntries.Clear();
+        LoadoutDisplayItems.Clear();
+        SelectedLoadoutSlots.Clear();
+        SelectedLoadout = null;
 
         if (loadoutsExplorerHandle?.Loadouts?.Loadouts != null)
         {
             foreach (var entry in loadoutsExplorerHandle.Loadouts.Loadouts)
-                LoadoutEntries.Add(entry);
+            {
+                LoadoutDisplayItems.Add(new LoadoutDisplayItem
+                {
+                    Name = entry.LoadoutName ?? "Unnamed",
+                    SlotCount = entry.Slots?.Count ?? 0,
+                    SourceEntry = entry
+                });
+            }
         }
+
+        LoadoutCount = LoadoutDisplayItems.Count;
     }
 
     private void SetLoadoutsValues()
     {
         if (loadoutsExplorerHandle?.Loadouts == null) return;
-        loadoutsExplorerHandle.Loadouts.Loadouts = [.. LoadoutEntries];
-        Log.Information("Set loadout values ({Count} entries)", LoadoutEntries.Count);
+
+        var entries = new List<LoadoutEntry>();
+        foreach (var item in LoadoutDisplayItems)
+        {
+            if (item.SourceEntry != null)
+            {
+                item.SourceEntry.LoadoutName = item.Name;
+                entries.Add(item.SourceEntry);
+            }
+        }
+
+        loadoutsExplorerHandle.Loadouts.Loadouts = entries;
+        Log.Information("Set loadout values ({Count} entries)", entries.Count);
+    }
+
+    private void LoadMountsData()
+    {
+        MountDisplayItems.Clear();
+        SelectedMount = null;
+
+        if (mountsExplorerHandle?.MountsData?.SavedMounts != null)
+        {
+            foreach (var mount in mountsExplorerHandle.MountsData.SavedMounts)
+            {
+                MountDisplayItems.Add(new MountDisplayItem
+                {
+                    Name = mount.MountName ?? "Unnamed",
+                    Level = mount.MountLevel,
+                    TypeRaw = mount.MountType ?? "Unknown",
+                    TypeDisplay = CreatureData.GetDisplayName(mount.MountType),
+                    Category = CreatureData.GetCategoryLabel(mount.MountType),
+                    BlobSize = mount.RecorderBlob?.BinaryData?.Count ?? 0,
+                    SourceEntry = mount
+                });
+            }
+        }
+
+        MountCount = MountDisplayItems.Count;
+    }
+
+    private void SetMountsValues()
+    {
+        if (mountsExplorerHandle?.MountsData == null) return;
+
+        // Write display items back to mount entries
+        var updatedMounts = new List<MountEntry>();
+        foreach (var item in MountDisplayItems)
+        {
+            if (item.SourceEntry != null)
+            {
+                item.SourceEntry.MountName = item.Name;
+                item.SourceEntry.MountLevel = item.Level;
+                item.SourceEntry.MountType = item.TypeRaw;
+                updatedMounts.Add(item.SourceEntry);
+            }
+        }
+
+        mountsExplorerHandle.MountsData.SavedMounts = updatedMounts;
+        Log.Information("Set mount values ({Count} entries)", updatedMounts.Count);
     }
 
     /// <summary>
@@ -1426,4 +1803,84 @@ public class FlagDropdownItem
     public string DisplayName { get; set; } = "";
 
     public override string ToString() => DisplayName;
+}
+
+/// <summary>
+/// Display model for workshop inventory items.
+/// Handles both simple workshop items (MetaRow set) and full item instances (ItemStaticData).
+/// </summary>
+public class InventoryDisplayItem
+{
+    /// <summary>Display name resolved from MetaRow or ItemStaticData.RowName.</summary>
+    public string DisplayName { get; set; } = "";
+
+    /// <summary>The row identifier — MetaRow for workshop items, RowName for full items.</summary>
+    public string RowName { get; set; } = "";
+
+    /// <summary>Source table — "D_WorkshopItems" or "D_ItemsStatic".</summary>
+    public string DataTable { get; set; } = "";
+
+    /// <summary>Stack count.</summary>
+    public int Count { get; set; }
+
+    /// <summary>Durability (displayed as percentage). -1 if not applicable.</summary>
+    public string Durability { get; set; } = "";
+
+    /// <summary>Alteration/upgrade names if any.</summary>
+    public string Alterations { get; set; } = "";
+
+    /// <summary>Reference to original item for preserving all data during round-trip.</summary>
+    public InventoryItem? SourceItem { get; set; }
+}
+
+/// <summary>
+/// Item for the workshop item picker dropdown.
+/// </summary>
+public class WorkshopItemPickerItem
+{
+    public string MetaRow { get; set; } = "";
+    public string DisplayText { get; set; } = "";
+
+    public override string ToString() => DisplayText;
+}
+
+/// <summary>
+/// Display model for loadout entries.
+/// </summary>
+public class LoadoutDisplayItem
+{
+    public string Name { get; set; } = "";
+    public int SlotCount { get; set; }
+    public LoadoutEntry? SourceEntry { get; set; }
+}
+
+/// <summary>
+/// Display model for a single slot within a loadout.
+/// </summary>
+public class LoadoutSlotDisplay
+{
+    public int SlotIndex { get; set; }
+    public string MetaRow { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public LoadoutSlot? SourceSlot { get; set; }
+}
+
+/// <summary>
+/// Display model for pets/mounts in the DataGrid.
+/// Maps between the raw MountEntry and human-friendly display values.
+/// </summary>
+public class MountDisplayItem
+{
+    public string Name { get; set; } = "";
+    public int Level { get; set; }
+    public string TypeRaw { get; set; } = "";
+    public string TypeDisplay { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int BlobSize { get; set; }
+
+    /// <summary>
+    /// Reference to the original MountEntry for round-trip serialization.
+    /// This preserves the RecorderBlob binary data during edits.
+    /// </summary>
+    public MountEntry? SourceEntry { get; set; }
 }
