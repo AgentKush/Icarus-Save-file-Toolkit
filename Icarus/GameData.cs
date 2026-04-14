@@ -12,6 +12,9 @@ public class GameData
     private readonly string _bestiaryPath;
     private readonly string _loadoutsPath;
     private readonly string _mountsPath;
+    private readonly string _prospectsPath;
+    private readonly string _mapDataPath;
+    private readonly string _binaryFlagsPath;
     private readonly string _backupPath;
 
     internal const string CharactersFileName = "Characters.json";
@@ -21,6 +24,7 @@ public class GameData
     internal const string BestiaryFileName = "BestiaryData.json";
     internal const string LoadoutsFileName = "Loadouts.json";
     internal const string MountsFileName = "Mounts.json";
+    internal const string ProspectsFilePattern = "AssociatedProspects_Slot_*.json";
     internal const string BackupFolder = "backups";
 
     public bool ValidGamePath { get; private set; }
@@ -33,6 +37,7 @@ public class GameData
     internal string BestiaryPath => _bestiaryPath;
     internal string LoadoutsPath => _loadoutsPath;
     internal string MountsPath => _mountsPath;
+    internal string ProspectsPath => _prospectsPath;
     internal string BackupPath => _backupPath;
 
     public bool HasMetaInventory => File.Exists(_metaInventoryPath);
@@ -40,6 +45,9 @@ public class GameData
     public bool HasBestiary => File.Exists(_bestiaryPath);
     public bool HasLoadouts => File.Exists(_loadoutsPath);
     public bool HasMounts => File.Exists(_mountsPath);
+    public bool HasProspects => File.Exists(_prospectsPath);
+    public bool HasMapData => Directory.Exists(_mapDataPath) && Directory.EnumerateFiles(_mapDataPath, "*.fog").Any();
+    public bool HasBinaryFlags => File.Exists(_binaryFlagsPath);
 
     public GameData(string gameDataPath)
     {
@@ -51,6 +59,9 @@ public class GameData
         _bestiaryPath = Path.Combine(gameDataPath, BestiaryFileName);
         _loadoutsPath = Path.Combine(gameDataPath, LoadoutsFileName);
         _mountsPath = Path.Combine(gameDataPath, MountsFileName);
+        _prospectsPath = FindProspectsFile(gameDataPath);
+        _mapDataPath = Path.Combine(gameDataPath, "MapData");
+        _binaryFlagsPath = FindBinaryFlagsFile(gameDataPath);
         _backupPath = Path.Combine(Directory.GetCurrentDirectory(), BackupFolder);
 
         if (!ValidateGamePath(gameDataPath))
@@ -69,6 +80,9 @@ public class GameData
         Log.Information("Bestiary file set to {BestiaryPath} (exists: {Exists})", _bestiaryPath, HasBestiary);
         Log.Information("Loadouts file set to {LoadoutsPath} (exists: {Exists})", _loadoutsPath, HasLoadouts);
         Log.Information("Mounts file set to {MountsPath} (exists: {Exists})", _mountsPath, HasMounts);
+        Log.Information("Prospects file set to {ProspectsPath} (exists: {Exists})", _prospectsPath, HasProspects);
+        Log.Information("MapData path set to {MapDataPath} (exists: {Exists})", _mapDataPath, HasMapData);
+        Log.Information("Binary flags file set to {FlagsPath} (exists: {Exists})", _binaryFlagsPath, HasBinaryFlags);
         Log.Information("Backup folder set to {BackupPath}", _backupPath);
     }
 
@@ -85,6 +99,42 @@ public class GameData
     public LoadoutsExplorer GetLoadouts() => new(_loadoutsPath);
 
     public MountsExplorer GetMounts() => new(_mountsPath);
+
+    public ProspectsExplorer GetProspects() => new(_prospectsPath);
+
+    public FogExplorer GetFog() => new(_mapDataPath);
+
+    public BinaryFlagsExplorer GetBinaryFlags() => new(_binaryFlagsPath);
+
+    private static string FindBinaryFlagsFile(string gameDataPath)
+    {
+        try
+        {
+            var match = Directory.EnumerateFiles(gameDataPath, "flags_*.dat").FirstOrDefault();
+            return match ?? Path.Combine(gameDataPath, "flags.dat");
+        }
+        catch
+        {
+            return Path.Combine(gameDataPath, "flags.dat");
+        }
+    }
+
+    private static string FindProspectsFile(string gameDataPath)
+    {
+        try
+        {
+            // Prefer Slot_0 explicitly, then fall back to first match
+            var slot0 = Path.Combine(gameDataPath, "AssociatedProspects_Slot_0.json");
+            if (File.Exists(slot0)) return slot0;
+
+            var match = Directory.EnumerateFiles(gameDataPath, ProspectsFilePattern).FirstOrDefault();
+            return match ?? slot0;
+        }
+        catch
+        {
+            return Path.Combine(gameDataPath, "AssociatedProspects_Slot_0.json");
+        }
+    }
 
     public static bool ValidateGamePath(string gamePath)
     {

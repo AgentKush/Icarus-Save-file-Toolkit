@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -123,6 +124,9 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [ObservableProperty]
+    private int editedXPDebt;
+
+    [ObservableProperty]
     private string? editedName;
 
     // Character status
@@ -140,6 +144,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? lastPlayedDisplay;
+
+    // Character-level MetaResources (separate from Profile MetaResources)
+    [ObservableProperty]
+    private ObservableCollection<MetaResource> characterMetaResources = [];
+
+    [ObservableProperty]
+    private int selectedCharacterMetaResourceIndex = -1;
 
     #endregion
 
@@ -295,6 +306,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private int newAccoladePoints;
 
+    // Player Trackers (stats like LevelReached, TimeSurvived, etc.)
+    [ObservableProperty]
+    private ObservableCollection<TrackerDisplayItem> playerTrackers = [];
+
+    [ObservableProperty]
+    private int selectedTrackerIndex = -1;
+
+    // Player Task List Trackers (list-type progress like VisitBiomesList)
+    [ObservableProperty]
+    private ObservableCollection<TrackerDisplayItem> playerTaskListTrackers = [];
+
+    [ObservableProperty]
+    private int selectedTaskListTrackerIndex = -1;
+
     #endregion
 
     #region Bestiary
@@ -339,6 +364,22 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? metaInventoryId;
+
+    // Selected item detail editing
+    [ObservableProperty]
+    private bool hasSelectedItemDetail;
+
+    [ObservableProperty]
+    private string? selectedItemDetailName;
+
+    [ObservableProperty]
+    private int selectedItemDurability;
+
+    [ObservableProperty]
+    private int selectedItemStackCount;
+
+    [ObservableProperty]
+    private string? selectedItemAlterations;
 
     [ObservableProperty]
     private WorkshopItemPickerItem? selectedItemPicker;
@@ -412,6 +453,67 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private int loadoutCount;
+
+    #endregion
+
+    #region Prospects
+
+    private ProspectsExplorer? prospectsExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasProspects;
+
+    [ObservableProperty]
+    private string? prospectId;
+
+    [ObservableProperty]
+    private string? prospectDTKey;
+
+    [ObservableProperty]
+    private string? prospectState;
+
+    [ObservableProperty]
+    private string? prospectLobbyName;
+
+    [ObservableProperty]
+    private int prospectExpireTime;
+
+    [ObservableProperty]
+    private string? prospectFactionMission;
+
+    [ObservableProperty]
+    private ObservableCollection<ProspectMemberDisplay> prospectMembers = [];
+
+    #endregion
+
+    #region Experimental (Binary Data)
+
+    private FogExplorer? fogExplorerHandle;
+    private BinaryFlagsExplorer? binaryFlagsExplorerHandle;
+
+    [ObservableProperty]
+    private bool hasMapData;
+
+    [ObservableProperty]
+    private bool hasBinaryFlags;
+
+    [ObservableProperty]
+    private ObservableCollection<FogFileDisplay> fogFileItems = [];
+
+    [ObservableProperty]
+    private int selectedFogFileIndex = -1;
+
+    [ObservableProperty]
+    private string? binaryFlagsSteamId;
+
+    [ObservableProperty]
+    private ObservableCollection<FlagDisplayItem> binaryFlagItems = [];
+
+    [ObservableProperty]
+    private int selectedBinaryFlagIndex = -1;
+
+    [ObservableProperty]
+    private int newBinaryFlagId;
 
     #endregion
 
@@ -512,6 +614,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Load character values
         EditedXP = SelectedCharacter.XP;
+        EditedXPDebt = SelectedCharacter.XP_Debt;
         EditedName = SelectedCharacter.CharacterName;
         EditedIsDead = SelectedCharacter.IsDead;
         EditedIsAbandoned = SelectedCharacter.IsAbandoned;
@@ -562,6 +665,14 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         RefreshAvailableFlags();
 
+        // Load character-level meta resources
+        CharacterMetaResources.Clear();
+        if (SelectedCharacter.MetaResources != null)
+        {
+            foreach (var resource in SelectedCharacter.MetaResources)
+                CharacterMetaResources.Add(resource);
+        }
+
         // Load profile (all MetaResources dynamically + account flags)
         LoadProfileData();
 
@@ -579,6 +690,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Load mounts/pets
         LoadMountsData();
+
+        // Load prospects
+        LoadProspectsData();
+
+        // Load experimental binary data
+        LoadExperimentalData();
 
         currentLoadedCharacterIndex = SelectedCharacterIndex;
         LoadText = "Load Character Data";
@@ -765,6 +882,23 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         Progress = 75;
 
+        // Export prospects if available
+        if (prospectsExplorerHandle?.Prospect != null && HasProspects)
+        {
+            SetProspectsValues();
+            bool prospectSuccess = prospectsExplorerHandle.ExportProspects(prospectsExplorerHandle.Prospect);
+            if (!prospectSuccess)
+            {
+                ShowInfo("Prospects failed to export");
+                IsWarningIconVisible = true;
+            }
+        }
+        Progress = 78;
+
+        // Export experimental data (binary flags)
+        SetExperimentalValues();
+        Progress = 82;
+
         // Reload to verify
         LoadSelectedCharacter();
         Progress = 90;
@@ -934,6 +1068,108 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedMetaResourceIndex >= 0 && SelectedMetaResourceIndex < ProfileMetaResources.Count)
         {
             ProfileMetaResources.RemoveAt(SelectedMetaResourceIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void AddCharacterMetaResource()
+    {
+        CharacterMetaResources.Add(new MetaResource { MetaRow = "NewResource", Count = 0 });
+    }
+
+    [RelayCommand]
+    private void RemoveCharacterMetaResource()
+    {
+        if (SelectedCharacterMetaResourceIndex >= 0 && SelectedCharacterMetaResourceIndex < CharacterMetaResources.Count)
+        {
+            CharacterMetaResources.RemoveAt(SelectedCharacterMetaResourceIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyItemDurability()
+    {
+        if (SelectedInventoryItemIndex < 0 || SelectedInventoryItemIndex >= MetaInventoryItems.Count) return;
+
+        var display = MetaInventoryItems[SelectedInventoryItemIndex];
+        var source = display.SourceItem;
+        if (source == null) return;
+
+        // Update durability in dynamic data
+        var durProp = source.ItemDynamicData?.FirstOrDefault(d => d.PropertyType == "Durability");
+        if (durProp != null)
+        {
+            durProp.Value = SelectedItemDurability;
+            display.Durability = $"{SelectedItemDurability:N0}";
+        }
+        else if (SelectedItemDurability > 0)
+        {
+            // Add durability property if it doesn't exist yet
+            source.ItemDynamicData ??= [];
+            source.ItemDynamicData.Add(new ItemDynamicProperty { PropertyType = "Durability", Value = SelectedItemDurability });
+            display.Durability = $"{SelectedItemDurability:N0}";
+        }
+
+        // Update stack count
+        var stackProp = source.ItemDynamicData?.FirstOrDefault(d => d.PropertyType == "ItemableStack");
+        if (stackProp != null)
+        {
+            stackProp.Value = SelectedItemStackCount;
+        }
+        else if (source.Count > 0)
+        {
+            source.Count = SelectedItemStackCount;
+        }
+        display.Count = SelectedItemStackCount;
+
+        ShowInfo($"Updated {display.DisplayName}: Durability={SelectedItemDurability:N0}");
+        Log.Information("Applied durability {Durability} to item {Item}", SelectedItemDurability, display.RowName);
+    }
+
+    [RelayCommand]
+    private void AddBinaryFlag()
+    {
+        if (NewBinaryFlagId < 0) return;
+        if (BinaryFlagItems.Any(f => f.Id == NewBinaryFlagId))
+        {
+            ShowInfo($"Binary flag {NewBinaryFlagId} already exists");
+            return;
+        }
+        BinaryFlagItems.Add(new FlagDisplayItem
+        {
+            Id = NewBinaryFlagId,
+            Name = FlagDefinitions.GetCharacterFlagName(NewBinaryFlagId)
+        });
+    }
+
+    [RelayCommand]
+    private void RemoveBinaryFlag()
+    {
+        if (SelectedBinaryFlagIndex >= 0 && SelectedBinaryFlagIndex < BinaryFlagItems.Count)
+        {
+            BinaryFlagItems.RemoveAt(SelectedBinaryFlagIndex);
+        }
+    }
+
+    [RelayCommand]
+    private void ResetFogFile()
+    {
+        if (SelectedFogFileIndex < 0 || SelectedFogFileIndex >= FogFileItems.Count) return;
+        if (fogExplorerHandle == null) return;
+
+        var display = FogFileItems[SelectedFogFileIndex];
+        var fogFile = display.SourceFile;
+        if (fogFile == null) return;
+
+        bool success = fogExplorerHandle.DeleteFogFile(fogFile);
+        if (success)
+        {
+            FogFileItems.RemoveAt(SelectedFogFileIndex);
+            ShowInfo($"Reset exploration data for {display.ZoneName}");
+        }
+        else
+        {
+            ShowInfo($"Failed to reset {display.ZoneName}");
         }
     }
 
@@ -1111,6 +1347,28 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     partial void OnSelectedLoadoutIndexChanged(int value) => SelectLoadout();
+
+    partial void OnSelectedInventoryItemIndexChanged(int value)
+    {
+        if (value >= 0 && value < MetaInventoryItems.Count)
+        {
+            var display = MetaInventoryItems[value];
+            var source = display.SourceItem;
+            HasSelectedItemDetail = true;
+            SelectedItemDetailName = display.DisplayName;
+            SelectedItemDurability = source?.Durability ?? 0;
+            SelectedItemStackCount = display.Count;
+            SelectedItemAlterations = display.Alterations ?? "";
+        }
+        else
+        {
+            HasSelectedItemDetail = false;
+            SelectedItemDetailName = null;
+            SelectedItemDurability = 0;
+            SelectedItemStackCount = 0;
+            SelectedItemAlterations = null;
+        }
+    }
 
     [RelayCommand]
     private void SelectLoadout()
@@ -1295,6 +1553,16 @@ public partial class MainWindowViewModel : ViewModelBase
             // Load mounts/pets if available
             mountsExplorerHandle = gameData.GetMounts();
             HasMounts = gameData.HasMounts;
+
+            // Load prospects if available
+            prospectsExplorerHandle = gameData.GetProspects();
+            HasProspects = gameData.HasProspects;
+
+            // Load experimental binary data
+            fogExplorerHandle = gameData.GetFog();
+            HasMapData = gameData.HasMapData;
+            binaryFlagsExplorerHandle = gameData.GetBinaryFlags();
+            HasBinaryFlags = gameData.HasBinaryFlags;
 
             SelectedCharacterIndex = 0;
             ValidGamePath = true;
@@ -1505,6 +1773,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         SelectedCharacter.CharacterName = EditedName ?? "";
         SelectedCharacter.XP = EditedXP;
+        SelectedCharacter.XP_Debt = EditedXPDebt;
         SelectedCharacter.IsDead = EditedIsDead;
         SelectedCharacter.IsAbandoned = EditedIsAbandoned;
         SelectedCharacter.Location = EditedLocation ?? "";
@@ -1518,6 +1787,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Apply flags (convert display items back to int list)
         SelectedCharacter.UnlockedFlags = SelectedCharacterFlags.Select(f => f.Id).ToList();
+
+        // Apply character-level meta resources
+        SelectedCharacter.MetaResources = [.. CharacterMetaResources];
 
         Log.Information("Set character values for {CharacterName}", SelectedCharacter.CharacterName);
         CharacterList[SelectedCharacterIndex] = SelectedCharacter;
@@ -1694,6 +1966,53 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         CompletedAccoladeCount = CompletedAccoladeItems.Count;
+
+        // Player Trackers (stat-based)
+        PlayerTrackers.Clear();
+        if (accoladesExplorerHandle.Accolades.PlayerTrackers != null)
+        {
+            foreach (var kvp in accoladesExplorerHandle.Accolades.PlayerTrackers)
+            {
+                // Key format: (RowName="LevelReached",DataTableName="D_PlayerTrackers")
+                var displayName = ExtractRowNameFromTrackerKey(kvp.Key);
+                var valueStr = kvp.Value.ToString();
+                PlayerTrackers.Add(new TrackerDisplayItem
+                {
+                    Key = kvp.Key,
+                    DisplayName = displayName,
+                    Value = valueStr
+                });
+            }
+        }
+
+        // Player Task List Trackers (list-based)
+        PlayerTaskListTrackers.Clear();
+        if (accoladesExplorerHandle.Accolades.PlayerTaskListTrackers != null)
+        {
+            foreach (var kvp in accoladesExplorerHandle.Accolades.PlayerTaskListTrackers)
+            {
+                var displayName = ExtractRowNameFromTrackerKey(kvp.Key);
+                var valueStr = kvp.Value.ToString();
+                PlayerTaskListTrackers.Add(new TrackerDisplayItem
+                {
+                    Key = kvp.Key,
+                    DisplayName = displayName,
+                    Value = valueStr
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts RowName from tracker key like (RowName="LevelReached",DataTableName="D_PlayerTrackers").
+    /// </summary>
+    private static string ExtractRowNameFromTrackerKey(string key)
+    {
+        // Try to parse RowName="..." from the key
+        var match = System.Text.RegularExpressions.Regex.Match(key, @"RowName=""([^""]+)""");
+        return match.Success && !string.IsNullOrEmpty(match.Groups[1].Value)
+            ? match.Groups[1].Value
+            : key;
     }
 
     /// <summary>
@@ -1739,7 +2058,50 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (accoladesExplorerHandle?.Accolades == null) return;
         accoladesExplorerHandle.Accolades.Accolades = [.. AccoladeEntries];
-        Log.Information("Set accolade values ({Count} entries)", AccoladeEntries.Count);
+
+        // Write back player trackers
+        if (accoladesExplorerHandle.Accolades.PlayerTrackers != null)
+        {
+            var updatedTrackers = new Dictionary<string, JsonElement>();
+            foreach (var tracker in PlayerTrackers)
+            {
+                try
+                {
+                    var element = JsonSerializer.Deserialize<JsonElement>(tracker.Value);
+                    updatedTrackers[tracker.Key] = element;
+                }
+                catch
+                {
+                    // Keep original if value can't be parsed
+                    if (accoladesExplorerHandle.Accolades.PlayerTrackers.TryGetValue(tracker.Key, out var orig))
+                        updatedTrackers[tracker.Key] = orig;
+                }
+            }
+            accoladesExplorerHandle.Accolades.PlayerTrackers = updatedTrackers;
+        }
+
+        // Write back task list trackers
+        if (accoladesExplorerHandle.Accolades.PlayerTaskListTrackers != null)
+        {
+            var updatedTaskTrackers = new Dictionary<string, JsonElement>();
+            foreach (var tracker in PlayerTaskListTrackers)
+            {
+                try
+                {
+                    var element = JsonSerializer.Deserialize<JsonElement>(tracker.Value);
+                    updatedTaskTrackers[tracker.Key] = element;
+                }
+                catch
+                {
+                    if (accoladesExplorerHandle.Accolades.PlayerTaskListTrackers.TryGetValue(tracker.Key, out var orig))
+                        updatedTaskTrackers[tracker.Key] = orig;
+                }
+            }
+            accoladesExplorerHandle.Accolades.PlayerTaskListTrackers = updatedTaskTrackers;
+        }
+
+        Log.Information("Set accolade values ({Count} entries, {TrackerCount} trackers)",
+            AccoladeEntries.Count, PlayerTrackers.Count);
     }
 
     private void SetBestiaryValues()
@@ -1763,6 +2125,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     Name = entry.LoadoutName ?? "Unnamed",
                     SlotCount = entry.Slots?.Count ?? 0,
+                    EnviroSuit = entry.EnviroSuit?.ItemStaticData?.RowName ?? "None",
+                    DropshipType = entry.Dropship?.Type ?? "None",
+                    DropshipInUse = entry.Dropship?.InUse ?? false,
+                    MetaItemCount = entry.MetaItems?.Count ?? 0,
                     SourceEntry = entry
                 });
             }
@@ -1833,6 +2199,127 @@ public partial class MainWindowViewModel : ViewModelBase
 
         mountsExplorerHandle.MountsData.SavedMounts = updatedMounts;
         Log.Information("Set mount values ({Count} entries)", updatedMounts.Count);
+    }
+
+    private void LoadProspectsData()
+    {
+        ProspectMembers.Clear();
+        ProspectId = null;
+        ProspectDTKey = null;
+        ProspectState = null;
+        ProspectLobbyName = null;
+        ProspectExpireTime = 0;
+        ProspectFactionMission = null;
+
+        if (prospectsExplorerHandle?.Prospect?.AssociatedProspect != null)
+        {
+            var ap = prospectsExplorerHandle.Prospect.AssociatedProspect;
+            ProspectId = ap.ProspectID;
+            ProspectDTKey = ap.ProspectDTKey;
+            ProspectState = ap.ProspectState;
+            ProspectLobbyName = ap.LobbyName;
+            ProspectExpireTime = ap.ExpireTime;
+            ProspectFactionMission = ap.FactionMissionDTKey;
+
+            if (ap.AssociatedMembers != null)
+            {
+                foreach (var member in ap.AssociatedMembers)
+                {
+                    ProspectMembers.Add(new ProspectMemberDisplay
+                    {
+                        AccountName = member.AccountName ?? "",
+                        CharacterName = member.CharacterName ?? "",
+                        Status = member.Status ?? "",
+                        ChrSlot = member.ChrSlot,
+                        SourceMember = member
+                    });
+                }
+            }
+        }
+    }
+
+    private void SetProspectsValues()
+    {
+        if (prospectsExplorerHandle?.Prospect?.AssociatedProspect == null) return;
+
+        var ap = prospectsExplorerHandle.Prospect.AssociatedProspect;
+        ap.ProspectID = ProspectId ?? "";
+        ap.ProspectDTKey = ProspectDTKey ?? "";
+        ap.ProspectState = ProspectState ?? "";
+        ap.LobbyName = ProspectLobbyName ?? "";
+        ap.ExpireTime = ProspectExpireTime;
+        ap.FactionMissionDTKey = ProspectFactionMission ?? "";
+
+        // Write members back
+        var members = new List<ProspectMember>();
+        foreach (var display in ProspectMembers)
+        {
+            if (display.SourceMember != null)
+            {
+                display.SourceMember.AccountName = display.AccountName;
+                display.SourceMember.CharacterName = display.CharacterName;
+                display.SourceMember.Status = display.Status;
+                display.SourceMember.ChrSlot = display.ChrSlot;
+                members.Add(display.SourceMember);
+            }
+        }
+        ap.AssociatedMembers = members;
+
+        Log.Information("Set prospect values ({ProspectID})", ap.ProspectID);
+    }
+
+    private void LoadExperimentalData()
+    {
+        // Load fog files
+        FogFileItems.Clear();
+        if (fogExplorerHandle != null)
+        {
+            foreach (var fog in fogExplorerHandle.FogFiles)
+            {
+                // Calculate bounding box for display
+                var minX = fog.Entries.Count > 0 ? fog.Entries.Min(e => e.X) : 0;
+                var maxX = fog.Entries.Count > 0 ? fog.Entries.Max(e => e.X) : 0;
+                var minY = fog.Entries.Count > 0 ? fog.Entries.Min(e => e.Y) : 0;
+                var maxY = fog.Entries.Count > 0 ? fog.Entries.Max(e => e.Y) : 0;
+
+                FogFileItems.Add(new FogFileDisplay
+                {
+                    ZoneName = fog.ZoneName,
+                    FileName = fog.FileName,
+                    TileCount = fog.Entries.Count,
+                    BoundsDisplay = $"({minX},{minY}) to ({maxX},{maxY})",
+                    SourceFile = fog
+                });
+            }
+        }
+
+        // Load binary flags
+        BinaryFlagItems.Clear();
+        BinaryFlagsSteamId = null;
+        if (binaryFlagsExplorerHandle?.FlagsData != null)
+        {
+            BinaryFlagsSteamId = binaryFlagsExplorerHandle.FlagsData.SteamID;
+            foreach (var flagId in binaryFlagsExplorerHandle.FlagsData.FlagIDs)
+            {
+                BinaryFlagItems.Add(new FlagDisplayItem
+                {
+                    Id = flagId,
+                    Name = FlagDefinitions.GetCharacterFlagName(flagId)
+                });
+            }
+        }
+    }
+
+    private void SetExperimentalValues()
+    {
+        // Write binary flags
+        if (binaryFlagsExplorerHandle?.FlagsData != null)
+        {
+            binaryFlagsExplorerHandle.FlagsData.FlagIDs = BinaryFlagItems.Select(f => f.Id).ToList();
+            binaryFlagsExplorerHandle.ExportFlags(binaryFlagsExplorerHandle.FlagsData);
+        }
+
+        // Fog files are exported individually via ResetFogFile command — no bulk save needed
     }
 
     /// <summary>
@@ -1994,6 +2481,10 @@ public class LoadoutDisplayItem
 {
     public string Name { get; set; } = "";
     public int SlotCount { get; set; }
+    public string EnviroSuit { get; set; } = "None";
+    public string DropshipType { get; set; } = "None";
+    public bool DropshipInUse { get; set; }
+    public int MetaItemCount { get; set; }
     public LoadoutEntry? SourceEntry { get; set; }
 }
 
@@ -2026,4 +2517,43 @@ public class MountDisplayItem
     /// This preserves the RecorderBlob binary data during edits.
     /// </summary>
     public MountEntry? SourceEntry { get; set; }
+}
+
+/// <summary>
+/// Display model for prospect members.
+/// </summary>
+public class ProspectMemberDisplay
+{
+    public string AccountName { get; set; } = "";
+    public string CharacterName { get; set; } = "";
+    public string Status { get; set; } = "";
+    public int ChrSlot { get; set; }
+    public ProspectMember? SourceMember { get; set; }
+}
+
+/// <summary>
+/// Display model for player tracker stats (LevelReached, TimeSurvived, etc.).
+/// </summary>
+public class TrackerDisplayItem
+{
+    /// <summary>Raw key like (RowName="LevelReached",DataTableName="D_PlayerTrackers").</summary>
+    public string Key { get; set; } = "";
+
+    /// <summary>Cleaned display name (e.g. "LevelReached").</summary>
+    public string DisplayName { get; set; } = "";
+
+    /// <summary>JSON value as string — can be a number, string, array, or object.</summary>
+    public string Value { get; set; } = "";
+}
+
+/// <summary>
+/// Display model for fog-of-war files in the Experimental tab.
+/// </summary>
+public class FogFileDisplay
+{
+    public string ZoneName { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public int TileCount { get; set; }
+    public string BoundsDisplay { get; set; } = "";
+    public FogFile? SourceFile { get; set; }
 }

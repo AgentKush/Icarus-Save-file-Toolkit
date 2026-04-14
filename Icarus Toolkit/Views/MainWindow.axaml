@@ -154,6 +154,42 @@
                                             <TextBlock Text="{Binding EditedXP, StringFormat='{}{0:N0} XP'}" />
                                         </StackPanel>
                                     </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                        <TextBlock Text="XP Debt:" VerticalAlignment="Center" />
+                                        <NumericUpDown Width="140" Minimum="0"
+                                                       Value="{Binding EditedXPDebt}"
+                                                       IsEnabled="{Binding EditMode}"
+                                                       FormatString="N0" />
+                                        <TextBlock Text="(death penalty)" VerticalAlignment="Center"
+                                                   Foreground="#888888" FontSize="12" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Character Meta Resources -->
+                            <Border BorderThickness="0,0,0,1" BorderBrush="#444444" Padding="0,0,0,12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Character Meta Resources" FontSize="14" FontWeight="Bold" />
+                                    <TextBlock Text="Per-character resources (separate from profile-level currency)." Foreground="#AAAAAA" />
+                                    <DataGrid
+                                        ItemsSource="{Binding CharacterMetaResources}"
+                                        SelectedIndex="{Binding SelectedCharacterMetaResourceIndex}"
+                                        CanUserReorderColumns="False"
+                                        CanUserResizeColumns="True"
+                                        IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                                        MaxHeight="200"
+                                        GridLinesVisibility="Horizontal"
+                                        BorderThickness="1"
+                                        BorderBrush="#444444">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Resource (MetaRow)" Binding="{Binding MetaRow}" Width="*" />
+                                            <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="150" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding EditMode}">
+                                        <Button Command="{Binding AddCharacterMetaResourceCommand}" Content="Add Resource" />
+                                        <Button Command="{Binding RemoveCharacterMetaResourceCommand}" Content="Remove Selected" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 
@@ -273,7 +309,7 @@
 
                 <!-- ===== WORKSHOP ITEMS (META INVENTORY) TAB ===== -->
                 <TabItem Header="Workshop Items">
-                    <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="10">
+                    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <TextBlock Text="Orbital Workshop Inventory" FontSize="14" FontWeight="Bold" />
@@ -333,8 +369,33 @@
                                 <DataGridTextColumn Header="Alterations" Binding="{Binding Alterations}" Width="200" />
                             </DataGrid.Columns>
                         </DataGrid>
+                        <!-- Selected Item Detail -->
+                        <Border Grid.Row="2" IsVisible="{Binding HasSelectedItemDetail}"
+                                BorderThickness="1" BorderBrush="#444444" CornerRadius="4"
+                                Padding="12" Margin="0,8,0,0">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding SelectedItemDetailName, StringFormat='Edit: {0}'}"
+                                           FontSize="13" FontWeight="SemiBold" />
+                                <Grid ColumnDefinitions="100,160,100,160,Auto" RowDefinitions="Auto">
+                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Durability:" />
+                                    <NumericUpDown Grid.Column="1" Value="{Binding SelectedItemDurability}"
+                                                   Minimum="0" Maximum="99999999"
+                                                   IsEnabled="{Binding EditMode}" FormatString="N0" />
+                                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Stack:" />
+                                    <NumericUpDown Grid.Column="3" Value="{Binding SelectedItemStackCount}"
+                                                   Minimum="1" Maximum="999"
+                                                   IsEnabled="{Binding EditMode}" />
+                                    <Button Grid.Column="4" Command="{Binding ApplyItemDurabilityCommand}"
+                                            Content="Apply" Margin="8,0,0,0"
+                                            IsVisible="{Binding EditMode}" />
+                                </Grid>
+                                <TextBlock Text="{Binding SelectedItemAlterations, StringFormat='Alterations: {0}'}"
+                                           Foreground="#AAAAAA" FontSize="11"
+                                           IsVisible="{Binding SelectedItemAlterations, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </Border>
                         <!-- Item Picker -->
-                        <StackPanel Grid.Row="2" Spacing="4" Margin="0,8,0,0" IsVisible="{Binding EditMode}">
+                        <StackPanel Grid.Row="3" Spacing="4" Margin="0,8,0,0" IsVisible="{Binding EditMode}">
                             <TextBlock Text="Add from known items:" Foreground="#AAAAAA" FontSize="11" />
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <ComboBox ItemsSource="{Binding WorkshopItemPickerList}"
@@ -347,7 +408,7 @@
                             </StackPanel>
                         </StackPanel>
                         <!-- Manual entry -->
-                        <StackPanel Grid.Row="3" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding EditMode}">
+                        <StackPanel Grid.Row="4" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding EditMode}">
                             <TextBlock Text="Or enter a MetaRow name manually:" Foreground="#AAAAAA" FontSize="11" />
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBox Watermark="Item MetaRow (e.g. Pickaxe_Titanium)" Text="{Binding NewInventoryItemName}" Width="350" />
@@ -528,7 +589,8 @@
 
                 <!-- ===== ACCOLADES TAB ===== -->
                 <TabItem Header="Accolades">
-                    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+                    <ScrollViewer>
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="10">
                         <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,8">
                             <StackPanel Orientation="Horizontal" Spacing="12">
                                 <TextBlock Text="Accolades (Achievements)" FontSize="14" FontWeight="Bold" />
@@ -575,7 +637,54 @@
                                 <Button Command="{Binding RemoveAccoladeCommand}" Content="Remove Selected" />
                             </StackPanel>
                         </StackPanel>
+
+                        <!-- Player Trackers (Stats) -->
+                        <StackPanel Grid.Row="3" Spacing="4" Margin="0,12,0,0">
+                            <Border Height="1" Background="#444444" />
+                            <TextBlock Text="Player Trackers (Stats)" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" />
+                            <TextBlock Text="Your tracked stats like levels reached, distance traveled, creatures killed, etc."
+                                       Foreground="#AAAAAA" FontSize="11" />
+                            <DataGrid
+                                ItemsSource="{Binding PlayerTrackers}"
+                                SelectedIndex="{Binding SelectedTrackerIndex}"
+                                CanUserReorderColumns="False"
+                                CanUserResizeColumns="True"
+                                IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                                MaxHeight="200"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#444444">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Tracker" Binding="{Binding DisplayName}" Width="*" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="200" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+
+                        <!-- Player Task List Trackers -->
+                        <StackPanel Grid.Row="4" Spacing="4" Margin="0,12,0,0">
+                            <Border Height="1" Background="#444444" />
+                            <TextBlock Text="Task List Trackers" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" />
+                            <TextBlock Text="List-based progress tracking: biomes visited, ores mined, foods crafted, etc."
+                                       Foreground="#AAAAAA" FontSize="11" />
+                            <DataGrid
+                                ItemsSource="{Binding PlayerTaskListTrackers}"
+                                SelectedIndex="{Binding SelectedTaskListTrackerIndex}"
+                                CanUserReorderColumns="False"
+                                CanUserResizeColumns="True"
+                                IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                                MaxHeight="200"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#444444">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Tracker" Binding="{Binding DisplayName}" Width="*" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="300" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
                     </Grid>
+                    </ScrollViewer>
                 </TabItem>
 
                 <!-- ===== BESTIARY TAB ===== -->
@@ -678,14 +787,165 @@
                             </Grid>
                         </Grid>
 
-                        <!-- Bottom: loadout management controls -->
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
-                                    Margin="0,8,0,0" IsVisible="{Binding EditMode}">
-                            <TextBox Watermark="Loadout Name" Text="{Binding NewLoadoutName}" Width="250" />
-                            <Button Command="{Binding AddLoadoutCommand}" Content="Add Loadout" />
-                            <Button Command="{Binding RemoveLoadoutCommand}" Content="Remove Selected" />
+                        <!-- Loadout details: EnviroSuit, Dropship, Meta Items -->
+                        <StackPanel Grid.Row="2" Spacing="6" Margin="0,8,0,0">
+                            <Border Height="1" Background="#444444" />
+                            <TextBlock Text="Loadout Details" FontSize="13" FontWeight="SemiBold" />
+                            <Grid ColumnDefinitions="120,*,120,*" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="EnviroSuit:" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"
+                                           Text="{Binding SelectedLoadout.EnviroSuit, FallbackValue='—'}" Foreground="#CCCCCC" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="Meta Items:" />
+                                <TextBlock Grid.Row="0" Grid.Column="3" VerticalAlignment="Center"
+                                           Text="{Binding SelectedLoadout.MetaItemCount, FallbackValue='0'}" Foreground="#CCCCCC" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Dropship:" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"
+                                           Text="{Binding SelectedLoadout.DropshipType, FallbackValue='—'}" Foreground="#CCCCCC" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="In Use:" />
+                                <TextBlock Grid.Row="1" Grid.Column="3" VerticalAlignment="Center"
+                                           Text="{Binding SelectedLoadout.DropshipInUse, FallbackValue='false'}" Foreground="#CCCCCC" />
+                            </Grid>
+
+                            <!-- Loadout management controls -->
+                            <StackPanel Orientation="Horizontal" Spacing="8"
+                                        Margin="0,4,0,0" IsVisible="{Binding EditMode}">
+                                <TextBox Watermark="Loadout Name" Text="{Binding NewLoadoutName}" Width="250" />
+                                <Button Command="{Binding AddLoadoutCommand}" Content="Add Loadout" />
+                                <Button Command="{Binding RemoveLoadoutCommand}" Content="Remove Selected" />
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
+                </TabItem>
+
+                <!-- ===== PROSPECTS TAB ===== -->
+                <TabItem Header="Prospects" IsVisible="{Binding HasProspects}">
+                    <ScrollViewer Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Associated Prospect" FontSize="14" FontWeight="Bold" />
+                            <TextBlock Text="Your active prospect/mission data. Edit to fix stuck missions or change prospect settings."
+                                       Foreground="#AAAAAA" TextWrapping="Wrap" />
+
+                            <Grid ColumnDefinitions="140,*,140,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,8,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Prospect ID:" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProspectId}"
+                                         IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Text="DT Key:" />
+                                <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding ProspectDTKey}"
+                                         IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="State:" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProspectState}"
+                                         IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Text="Lobby Name:" />
+                                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ProspectLobbyName}"
+                                         IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Expire Time:" />
+                                <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding ProspectExpireTime}"
+                                               IsEnabled="{Binding EditMode}" />
+                                <TextBlock Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Text="Faction Mission:" />
+                                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding ProspectFactionMission}"
+                                         IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}" />
+                            </Grid>
+
+                            <Border Height="1" Background="#444444" Margin="0,4" />
+                            <TextBlock Text="Members" FontSize="13" FontWeight="SemiBold" />
+                            <DataGrid
+                                ItemsSource="{Binding ProspectMembers}"
+                                CanUserReorderColumns="False"
+                                CanUserResizeColumns="True"
+                                IsReadOnly="{Binding EditMode, Converter={StaticResource InverseBooleanConverter}}"
+                                MaxHeight="300"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#444444">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Account Name" Binding="{Binding AccountName}" Width="*" />
+                                    <DataGridTextColumn Header="Character" Binding="{Binding CharacterName}" Width="*" />
+                                    <DataGridTextColumn Header="Slot" Binding="{Binding ChrSlot}" Width="60" />
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="120" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ===== EXPERIMENTAL TAB ===== -->
+                <TabItem Header="Experimental">
+                    <ScrollViewer Padding="16">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Experimental (Binary Data)" FontSize="14" FontWeight="Bold" />
+                                <TextBlock Text="These sections read binary game files that are not JSON. Editing these is experimental — use with caution. Always backup first."
+                                           Foreground="#FF9800" TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <!-- Map Exploration (Fog of War) -->
+                            <Border BorderThickness="0,0,0,1" BorderBrush="#444444" Padding="0,0,0,12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Map Exploration (Fog of War)" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="Each .fog file tracks which tiles you've explored in a terrain zone. Resetting a file will re-hide that zone's map."
+                                               Foreground="#AAAAAA" TextWrapping="Wrap" />
+                                    <DataGrid
+                                        ItemsSource="{Binding FogFileItems}"
+                                        SelectedIndex="{Binding SelectedFogFileIndex}"
+                                        CanUserReorderColumns="False"
+                                        CanUserResizeColumns="True"
+                                        IsReadOnly="True"
+                                        MaxHeight="200"
+                                        GridLinesVisibility="Horizontal"
+                                        BorderThickness="1"
+                                        BorderBrush="#444444">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Zone" Binding="{Binding ZoneName}" Width="200" />
+                                            <DataGridTextColumn Header="File" Binding="{Binding FileName}" Width="180" />
+                                            <DataGridTextColumn Header="Explored Tiles" Binding="{Binding TileCount}" Width="120" />
+                                            <DataGridTextColumn Header="Bounds" Binding="{Binding BoundsDisplay}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding EditMode}">
+                                        <Button Command="{Binding ResetFogFileCommand}" Content="Reset Selected Zone"
+                                                Foreground="#FF5252" />
+                                        <TextBlock VerticalAlignment="Center" Foreground="#888888" FontSize="11"
+                                                   Text="Deletes the .fog file — the game will re-hide that zone's map." />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Binary Flags (.dat file) -->
+                            <Border BorderThickness="0,0,0,1" BorderBrush="#444444" Padding="0,0,0,12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Binary Flags (.dat)" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="Flags stored in the binary flags_{SteamID}.dat file. These are separate from the JSON-based account/character flags."
+                                               Foreground="#AAAAAA" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock VerticalAlignment="Center" Text="Steam ID:" />
+                                        <TextBlock VerticalAlignment="Center" Text="{Binding BinaryFlagsSteamId}" Foreground="#CCCCCC" />
+                                    </StackPanel>
+                                    <DataGrid
+                                        ItemsSource="{Binding BinaryFlagItems}"
+                                        SelectedIndex="{Binding SelectedBinaryFlagIndex}"
+                                        CanUserReorderColumns="False"
+                                        CanUserResizeColumns="True"
+                                        IsReadOnly="True"
+                                        MaxHeight="250"
+                                        GridLinesVisibility="Horizontal"
+                                        BorderThickness="1"
+                                        BorderBrush="#444444">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Flag ID" Binding="{Binding Id}" Width="80" />
+                                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding EditMode}">
+                                        <NumericUpDown Value="{Binding NewBinaryFlagId}" Minimum="0" Maximum="9999" Width="100" />
+                                        <Button Command="{Binding AddBinaryFlagCommand}" Content="Add Flag" />
+                                        <Button Command="{Binding RemoveBinaryFlagCommand}" Content="Remove Selected" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </TabItem>
 
                 <!-- ===== BACKUP & RESTORE TAB ===== -->

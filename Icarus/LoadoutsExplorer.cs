@@ -88,6 +88,44 @@ public class LoadoutEntry
 {
     public string? LoadoutName { get; set; }
     public List<LoadoutSlot>? Slots { get; set; }
+    public LoadoutItemData? EnviroSuit { get; set; }
+    public DropshipData? Dropship { get; set; }
+    public List<LoadoutItemData>? MetaItems { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+/// <summary>
+/// Represents a full item in a loadout (EnviroSuit, MetaItems, etc.).
+/// Uses ExtensionData to preserve complex nested data like ItemDynamicData, CustomProperties.
+/// </summary>
+public class LoadoutItemData
+{
+    public ItemStaticRef? ItemStaticData { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+/// <summary>
+/// Static data reference for an item (RowName + DataTable).
+/// </summary>
+public class ItemStaticRef
+{
+    public string? RowName { get; set; }
+    public string? DataTableName { get; set; }
+}
+
+/// <summary>
+/// Dropship configuration within a loadout.
+/// </summary>
+public class DropshipData
+{
+    public string? Name { get; set; }
+    public string? Type { get; set; }
+    public int DropshipID { get; set; }
+    public bool InUse { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
